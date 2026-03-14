@@ -5,139 +5,39 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
-	lipgloss "charm.land/lipgloss/v2"
+	"github.com/srschreiber/nito/shellapp/components"
+	"github.com/srschreiber/nito/shellapp/styles"
 )
 
-type modelRow struct {
-	y      int
-	width  int
-	height int
-}
-
-type rowClickMsg struct{ row int }
-type rowHoverMsg struct{ row int }
-
-type component interface {
-	computeLayout(yOffset int) ([]modelRow, int)
-	Update(msg tea.Msg) tea.Cmd
-	Render() string
-}
-
-type listSelectionComponent struct {
-	title               string
-	choices             []string
-	selected            map[int]struct{}
-	focusedElementIndex int
-}
-
-func (l *listSelectionComponent) toggle(row int) {
-	if _, ok := l.selected[row]; ok {
-		delete(l.selected, row)
-	} else {
-		l.selected[row] = struct{}{}
-	}
-}
-
-func (l *listSelectionComponent) Update(msg tea.Msg) tea.Cmd {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "up", "k":
-			if l.focusedElementIndex > 0 {
-				l.focusedElementIndex--
-			}
-		case "down", "j":
-			if l.focusedElementIndex < len(l.choices)-1 {
-				l.focusedElementIndex++
-			}
-		case "enter", "space":
-			l.toggle(l.focusedElementIndex)
-		}
-	case rowClickMsg:
-		l.focusedElementIndex = msg.row
-		l.toggle(msg.row)
-	case rowHoverMsg:
-		l.focusedElementIndex = msg.row
-	}
-	return nil
-}
-
-func (l *listSelectionComponent) Render() string {
-	s := titleStyle.Render(l.title) + "\n"
-	for i, choice := range l.choices {
-		cursor := " "
-		if l.focusedElementIndex == i {
-			cursor = cursorStyle.Render("›")
-		}
-
-		checked := " "
-		if _, ok := l.selected[i]; ok {
-			checked = selectedStyle.Render("✓")
-			choice = selectedStyle.Render(choice)
-		}
-
-		row := fmt.Sprintf("%s [%s] %s", cursor, checked, choice)
-		s += itemStyle.Render(row) + "\n"
-	}
-	return s
-}
-
-func (l *listSelectionComponent) computeLayout(yOffset int) ([]modelRow, int) {
-	yOffset += lipgloss.Height(titleStyle.Render(l.title) + "\n")
-
-	rows := make([]modelRow, 0, len(l.choices))
-	for i, choice := range l.choices {
-		checked := " "
-		if _, ok := l.selected[i]; ok {
-			checked = selectedStyle.Render("✓")
-			choice = selectedStyle.Render(choice)
-		}
-
-		rowText := fmt.Sprintf("  [%s] %s", checked, choice)
-		renderedRow := itemStyle.Render(rowText)
-
-		rows = append(rows, modelRow{
-			y:      yOffset,
-			width:  lipgloss.Width(renderedRow),
-			height: lipgloss.Height(renderedRow),
-		})
-
-		yOffset += lipgloss.Height(renderedRow)
-	}
-
-	return rows, yOffset
-}
-
 type model struct {
-	width      int
-	height     int
-	cursorRow  int
-	list       *listSelectionComponent
-	components []component
+	width     int
+	height    int
+	cursorRow int
+	list      *components.ListSelectionComponent
+	comps     []components.Component
 }
 
 // computeRowLayout calculates the position and size of each row based on the current choices and styles. This is used for mouse interaction to determine which row is being clicked or hovered over.
-func (m model) computeRowLayout() []modelRow {
+func (m model) computeRowLayout() []components.ModelRow {
 	yOffset := 3
 
-	var rows []modelRow
-	for _, c := range m.components {
-		var componentRows []modelRow
-		componentRows, yOffset = c.computeLayout(yOffset)
+	var rows []components.ModelRow
+	for _, c := range m.comps {
+		var componentRows []components.ModelRow
+		componentRows, yOffset = c.ComputeLayout(yOffset)
 		rows = append(rows, componentRows...)
 	}
 	return rows
 }
 
 func initialModel() model {
-	list := &listSelectionComponent{
-		title:    "What should we buy at the market?",
-		choices:  []string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
-		selected: make(map[int]struct{}),
-	}
+	list := components.NewListSelectionComponent(
+		"What should we buy at the market?",
+		[]string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
+	)
 	return model{
-		list:       list,
-		components: []component{list},
+		list:  list,
+		comps: []components.Component{list},
 	}
 }
 
@@ -156,11 +56,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursorRow--
 			}
 		case "down", "j":
-			if m.cursorRow < len(m.list.choices)-1 {
+			if m.cursorRow < len(m.list.Choices)-1 {
 				m.cursorRow++
 			}
 		}
-		for _, c := range m.components {
+		for _, c := range m.comps {
 			c.Update(msg)
 		}
 
@@ -173,10 +73,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		rows := m.computeRowLayout()
 		for i, r := range rows {
-			if mouse.Y >= r.y && mouse.Y < r.y+r.height {
+			if mouse.Y >= r.Y && mouse.Y < r.Y+r.Height {
 				m.cursorRow = i
-				for _, c := range m.components {
-					c.Update(rowClickMsg{row: i})
+				for _, c := range m.comps {
+					c.Update(components.RowClickMsg{Row: i})
 				}
 				break
 			}
@@ -191,10 +91,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		rows := m.computeRowLayout()
 		for i, r := range rows {
-			if mouse.Y >= r.y && mouse.Y < r.y+r.height {
+			if mouse.Y >= r.Y && mouse.Y < r.Y+r.Height {
 				m.cursorRow = i
-				for _, c := range m.components {
-					c.Update(rowHoverMsg{row: i})
+				for _, c := range m.comps {
+					c.Update(components.RowHoverMsg{Row: i})
 				}
 				break
 			}
@@ -204,43 +104,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-var (
-	appStyle = lipgloss.NewStyle().
-			Padding(1, 2)
-
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("205"))
-
-	cursorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("212")).
-			Bold(true)
-
-	itemStyle = lipgloss.NewStyle().
-			PaddingLeft(2)
-
-	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42")).
-			Bold(true)
-
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			MarginTop(1)
-
-	boxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("63")).
-			Padding(1, 2)
-)
-
 func (m model) View() tea.View {
 	s := ""
-	for _, c := range m.components {
+	for _, c := range m.comps {
 		s += c.Render()
 	}
-	s += helpStyle.Render("j/k or arrows • click row • space/enter select • q quit")
+	s += styles.HelpStyle.Render("j/k or arrows • click row • space/enter select • q quit")
 
-	v := tea.NewView(appStyle.Render(boxStyle.Render(s)))
+	v := tea.NewView(styles.AppStyle.Render(styles.BoxStyle.Render(s)))
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
