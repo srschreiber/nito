@@ -17,8 +17,8 @@ type model struct {
 	comps     []components.Component
 }
 
-// computeRowLayout calculates the position and size of each row based on the current choices and styles. This is used for mouse interaction to determine which row is being clicked or hovered over.
-func (m model) computeRowLayout() []components.ModelRow {
+// computeComponentRowLayout calculates the position and size of each row based on the current choices and styles. This is used for mouse interaction to determine which row is being clicked or hovered over.
+func (m model) computeComponentRowLayout() []components.ModelRow {
 	yOffset := 4
 
 	var rows []components.ModelRow
@@ -71,7 +71,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 
-		rows := m.computeRowLayout()
+		rows := m.computeComponentRowLayout()
 		for i, r := range rows {
 			if mouse.Y >= r.Y && mouse.Y < r.Y+r.Height {
 				m.cursorRow = i
@@ -89,7 +89,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMotionMsg:
 		mouse := msg.Mouse()
 
-		rows := m.computeRowLayout()
+		rows := m.computeComponentRowLayout()
 		for i, r := range rows {
 			if mouse.Y >= r.Y && mouse.Y < r.Y+r.Height {
 				m.cursorRow = i
