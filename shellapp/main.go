@@ -14,14 +14,20 @@ type modelRow struct {
 	height int
 }
 
+type rowClickMsg struct{ row int }
+type rowHoverMsg struct{ row int }
+
 type component interface {
 	computeLayout(yOffset int) ([]modelRow, int)
+	Update(msg tea.Msg) tea.Cmd
+	Render() string
 }
 
 type listSelectionComponent struct {
-	title    string
-	choices  []string
-	selected map[int]struct{}
+	title               string
+	choices             []string
+	selected            map[int]struct{}
+	focusedElementIndex int
 }
 
 func (l *listSelectionComponent) toggle(row int) {
@@ -32,8 +38,52 @@ func (l *listSelectionComponent) toggle(row int) {
 	}
 }
 
+func (l *listSelectionComponent) Update(msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "up", "k":
+			if l.focusedElementIndex > 0 {
+				l.focusedElementIndex--
+			}
+		case "down", "j":
+			if l.focusedElementIndex < len(l.choices)-1 {
+				l.focusedElementIndex++
+			}
+		case "enter", "space":
+			l.toggle(l.focusedElementIndex)
+		}
+	case rowClickMsg:
+		l.focusedElementIndex = msg.row
+		l.toggle(msg.row)
+	case rowHoverMsg:
+		l.focusedElementIndex = msg.row
+	}
+	return nil
+}
+
+func (l *listSelectionComponent) Render() string {
+	s := titleStyle.Render(l.title) + "\n"
+	for i, choice := range l.choices {
+		cursor := " "
+		if l.focusedElementIndex == i {
+			cursor = cursorStyle.Render("›")
+		}
+
+		checked := " "
+		if _, ok := l.selected[i]; ok {
+			checked = selectedStyle.Render("✓")
+			choice = selectedStyle.Render(choice)
+		}
+
+		row := fmt.Sprintf("%s [%s] %s", cursor, checked, choice)
+		s += itemStyle.Render(row) + "\n"
+	}
+	return s
+}
+
 func (l *listSelectionComponent) computeLayout(yOffset int) ([]modelRow, int) {
-	//yOffset += lipgloss.Height(titleStyle.Render(l.title))
+	yOffset += lipgloss.Height(titleStyle.Render(l.title) + "\n")
 
 	rows := make([]modelRow, 0, len(l.choices))
 	for i, choice := range l.choices {
@@ -95,7 +145,6 @@ func (m model) Init() tea.Cmd {
 	return nil
 }
 
-// TODO: just call update on each component and let them figure out what to do
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -110,8 +159,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursorRow < len(m.list.choices)-1 {
 				m.cursorRow++
 			}
-		case "enter", "space":
-			m.list.toggle(m.cursorRow)
+		}
+		for _, c := range m.components {
+			c.Update(msg)
 		}
 
 	case tea.MouseClickMsg:
@@ -125,7 +175,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, r := range rows {
 			if mouse.Y >= r.y && mouse.Y < r.y+r.height {
 				m.cursorRow = i
-				m.list.toggle(i)
+				for _, c := range m.components {
+					c.Update(rowClickMsg{row: i})
+				}
 				break
 			}
 		}
@@ -141,6 +193,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, r := range rows {
 			if mouse.Y >= r.y && mouse.Y < r.y+r.height {
 				m.cursorRow = i
+				for _, c := range m.components {
+					c.Update(rowHoverMsg{row: i})
+				}
 				break
 			}
 		}
@@ -178,26 +233,11 @@ var (
 			Padding(1, 2)
 )
 
-// todo: iterate through components, call .Render
 func (m model) View() tea.View {
-	s := titleStyle.Render(m.list.title) + "\n"
-
-	for i, choice := range m.list.choices {
-		cursor := " "
-		if m.cursorRow == i {
-			cursor = cursorStyle.Render("›")
-		}
-
-		checked := " "
-		if _, ok := m.list.selected[i]; ok {
-			checked = selectedStyle.Render("✓")
-			choice = selectedStyle.Render(choice)
-		}
-
-		row := fmt.Sprintf("%s [%s] %s", cursor, checked, choice)
-		s += itemStyle.Render(row) + "\n"
+	s := ""
+	for _, c := range m.components {
+		s += c.Render()
 	}
-
 	s += helpStyle.Render("j/k or arrows • click row • space/enter select • q quit")
 
 	v := tea.NewView(appStyle.Render(boxStyle.Render(s)))
