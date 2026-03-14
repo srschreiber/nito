@@ -19,7 +19,7 @@ type model struct {
 
 // computeRowLayout calculates the position and size of each row based on the current choices and styles. This is used for mouse interaction to determine which row is being clicked or hovered over.
 func (m model) computeRowLayout() []components.ModelRow {
-	yOffset := 3
+	yOffset := 4
 
 	var rows []components.ModelRow
 	for _, c := range m.comps {
