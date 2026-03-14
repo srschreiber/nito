@@ -33,7 +33,7 @@ func (l *listSelectionComponent) toggle(row int) {
 }
 
 func (l *listSelectionComponent) computeLayout(yOffset int) ([]modelRow, int) {
-	yOffset += lipgloss.Height(titleStyle.Render(l.title))
+	//yOffset += lipgloss.Height(titleStyle.Render(l.title))
 
 	rows := make([]modelRow, 0, len(l.choices))
 	for i, choice := range l.choices {
@@ -68,7 +68,7 @@ type model struct {
 
 // computeRowLayout calculates the position and size of each row based on the current choices and styles. This is used for mouse interaction to determine which row is being clicked or hovered over.
 func (m model) computeRowLayout() []modelRow {
-	yOffset := boxStyle.GetBorderTopSize() + boxStyle.GetPaddingTop()
+	yOffset := 3
 
 	var rows []modelRow
 	for _, c := range m.components {
@@ -95,6 +95,7 @@ func (m model) Init() tea.Cmd {
 	return nil
 }
 
+// TODO: just call update on each component and let them figure out what to do
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -177,6 +178,7 @@ var (
 			Padding(1, 2)
 )
 
+// todo: iterate through components, call .Render
 func (m model) View() tea.View {
 	s := titleStyle.Render(m.list.title) + "\n"
 
