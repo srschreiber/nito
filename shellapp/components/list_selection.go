@@ -9,6 +9,7 @@ import (
 
 type Component interface {
 	SetFocused(focused bool)
+	Init() tea.Cmd
 	Update(msg tea.Msg) tea.Cmd
 	Render() string
 }
@@ -27,6 +28,10 @@ func NewListSelectionComponent(title string, choices []string) *ListSelectionCom
 		Choices:  choices,
 		Selected: make(map[int]struct{}),
 	}
+}
+
+func (l *ListSelectionComponent) Init() tea.Cmd {
+	return nil
 }
 
 func (l *ListSelectionComponent) SetFocused(focused bool) {

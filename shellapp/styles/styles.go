@@ -8,17 +8,17 @@ var (
 
 	TitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("205"))
+			Foreground(lipgloss.Color("213"))
 
 	CursorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("212")).
+			Foreground(lipgloss.Color("213")).
 			Bold(true)
 
 	ItemStyle = lipgloss.NewStyle().
 			PaddingLeft(2)
 
 	SelectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42")).
+			Foreground(lipgloss.Color("84")).
 			Bold(true)
 
 	HelpStyle = lipgloss.NewStyle().
@@ -31,12 +31,18 @@ var (
 			Padding(1, 2)
 
 	FocusedBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("212")).
+				Border(lipgloss.ThickBorder(), false, false, false, true).
+				BorderForeground(lipgloss.Color("213")).
 				Padding(0, 1)
 
 	UnfocusedBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
+				Border(lipgloss.ThickBorder(), false, false, false, true).
 				BorderForeground(lipgloss.Color("238")).
 				Padding(0, 1)
+
+	PromptStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("147")).
+			Bold(true)
+
+	Grey = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )

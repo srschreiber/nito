@@ -21,38 +21,50 @@ func initialModel() model {
 		"What should we buy at the market?",
 		[]string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
 	)
-	list2 := components.NewListSelectionComponent(
-		"What should we buy at the market?2",
-		[]string{"Buy carrots2", "Buy celery2", "Buy kohlrabi2"},
-	)
+
+	command := components.NewCommandComponent()
 	m := model{
-		comps: []components.Component{list, list2},
+		comps: []components.Component{list, command},
 	}
 	m.comps[0].SetFocused(true)
 	return m
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	var cmds []tea.Cmd
+	for _, c := range m.comps {
+		if cmd := c.Init(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return m, tea.Quit
 		case "tab":
 			m.comps[m.focusedComponent].SetFocused(false)
 			m.focusedComponent = (m.focusedComponent + 1) % len(m.comps)
 			m.comps[m.focusedComponent].SetFocused(true)
 		default:
-			m.comps[m.focusedComponent].Update(msg)
+			return m, m.comps[m.focusedComponent].Update(msg)
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	default:
+		var cmds []tea.Cmd
+		for _, c := range m.comps {
+			if cmd := c.Update(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	return m, nil
@@ -63,7 +75,7 @@ func (m model) View() tea.View {
 	for _, c := range m.comps {
 		s += c.Render() + "\n"
 	}
-	s += styles.HelpStyle.Render("tab focus • j/k or arrows navigate • space/enter select • q quit")
+	s += styles.HelpStyle.Render("tab focus • j/k or arrows navigate • space/enter select")
 
 	return tea.NewView(styles.AppStyle.Render(styles.BoxStyle.Render(s)))
 }
