@@ -53,4 +53,20 @@ var (
 	LineStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("243")).
 			Faint(true)
+
+	CursorHighlightStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("213")).
+				Foreground(lipgloss.Color("0"))
+
+	StatusConnectedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("82")).
+				Bold(true)
+
+	StatusDisconnectedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("196")).
+				Bold(true)
+
+	StatusLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("243")).
+				Faint(true)
 )

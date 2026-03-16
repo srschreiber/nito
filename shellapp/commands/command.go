@@ -29,6 +29,12 @@ var Registry = []CommandDef{
 	{Name: "clear", Desc: "clear the screen"},
 	{Name: "exit", Desc: "exit the shell"},
 	{Name: "history", Desc: "show command history"},
+	{Name: "connect", Desc: "establish a persistent WebSocket connection to a broker", Args: []ArgDef{
+		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:8080)"},
+	}},
+	{Name: "ping", Desc: "test connectivity to a broker via WebSocket", Args: []ArgDef{
+		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:7070)"},
+	}},
 	{Name: "wcid", Desc: "describe all commands and their arguments", Args: []ArgDef{
 		{Short: "c", Long: "command", Desc: "show details for a specific command"},
 	}},

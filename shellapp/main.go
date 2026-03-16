@@ -5,30 +5,48 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/srschreiber/nito/shellapp/components"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
+)
+
+// Layout constants (lipgloss content dimensions, excluding borders/padding).
+const (
+	histWidth  = 55
+	histHeight = 18
+	statWidth  = 22
+	// statHeight matches histHeight for a uniform top row
+	cmdWidth = histWidth + statWidth + 8 // approx combined box overhead
 )
 
 type model struct {
 	width            int
 	height           int
 	focusedComponent int
+	history          *components.ConversationHistory
+	status           *components.StatusComponent
+	command          *components.CommandComponent
 	comps            []components.Component
+	// focusable holds the comps indices that participate in tab cycling
+	focusable []int
 }
 
 func initialModel() model {
-	// example
-	//list := components.NewListSelectionComponent(
-	//	"What should we buy at the market?",
-	//	[]string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
-	//)
+	history := components.NewConversationHistory(histWidth, histHeight)
+	status := components.NewStatusComponent(statWidth, histHeight)
+	command := components.NewCommandComponent(cmdWidth)
 
-	command := components.NewCommandComponent()
+	// comps: 0=history, 1=status (display-only), 2=command
 	m := model{
-		comps: []components.Component{command},
+		history:          history,
+		status:           status,
+		command:          command,
+		comps:            []components.Component{history, status, command},
+		focusable:        []int{0, 2},
+		focusedComponent: 1, // index into focusable → comps[2] = command
 	}
-	m.comps[0].SetFocused(true)
+	m.comps[m.focusable[m.focusedComponent]].SetFocused(true)
 	return m
 }
 
@@ -49,39 +67,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "tab":
-			m.comps[m.focusedComponent].SetFocused(false)
-			m.focusedComponent = (m.focusedComponent + 1) % len(m.comps)
-			m.comps[m.focusedComponent].SetFocused(true)
+			m.comps[m.focusable[m.focusedComponent]].SetFocused(false)
+			m.focusedComponent = (m.focusedComponent + 1) % len(m.focusable)
+			m.comps[m.focusable[m.focusedComponent]].SetFocused(true)
+			return m, nil
 		default:
-			return m, m.comps[m.focusedComponent].Update(msg)
+			return m, m.comps[m.focusable[m.focusedComponent]].Update(msg)
 		}
-		//
-		//case tea.WindowSizeMsg:
-		//	//m.width = msg.Width
-		//	//m.height = msg.Height
-		//	//default:
-		//	//	var cmds []tea.Cmd
-		//	//	for _, c := range m.comps {
-		//	//		if cmd := c.Update(msg); cmd != nil {
-		//	//			cmds = append(cmds, cmd)
-		//	//		}
-		//	//	}
-		//	//	return m, tea.Batch(cmds...)
+	default:
+		// Broadcast non-key messages to all components
+		// (cursor blink, AppendHistoryMsg, ClearHistoryMsg, ConnectionStatusMsg, etc.)
+		var cmds []tea.Cmd
+		for _, c := range m.comps {
+			if cmd := c.Update(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
 	}
-
-	return m, nil
 }
 
 func (m model) View() tea.View {
-	s := ""
-	for _, c := range m.comps {
-		s += c.Render() + "\n"
-	}
+	topRow := lipgloss.JoinHorizontal(lipgloss.Top,
+		m.history.Render(),
+		m.status.Render(),
+	)
+	s := topRow + "\n" + m.command.Render()
+
 	footerText := ""
 	rem := types.ShellWrapWidth - len([]rune(footerText))
-	s += styles.HelpStyle.Render(footerText + fmt.Sprintf("%*s", rem, " "))
+	s += "\n" + styles.HelpStyle.Render(footerText+fmt.Sprintf("%*s", rem, " "))
 
-	return tea.NewView(styles.AppStyle.Render(styles.BoxStyle.Render(s)))
+	return tea.NewView(styles.AppStyle.Render(s))
 }
 
 func main() {
