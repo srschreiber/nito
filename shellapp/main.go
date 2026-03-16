@@ -77,7 +77,7 @@ func (m model) View() tea.View {
 	for _, c := range m.comps {
 		s += c.Render() + "\n"
 	}
-	footerText := "asdf"
+	footerText := ""
 	rem := types.ShellWrapWidth - len([]rune(footerText))
 	s += styles.HelpStyle.Render(footerText + fmt.Sprintf("%*s", rem, " "))
 
