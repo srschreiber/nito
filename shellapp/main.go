@@ -54,18 +54,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			return m, m.comps[m.focusedComponent].Update(msg)
 		}
-
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		//default:
-		//	var cmds []tea.Cmd
-		//	for _, c := range m.comps {
-		//		if cmd := c.Update(msg); cmd != nil {
-		//			cmds = append(cmds, cmd)
-		//		}
-		//	}
-		//	return m, tea.Batch(cmds...)
+		//
+		//case tea.WindowSizeMsg:
+		//	//m.width = msg.Width
+		//	//m.height = msg.Height
+		//	//default:
+		//	//	var cmds []tea.Cmd
+		//	//	for _, c := range m.comps {
+		//	//		if cmd := c.Update(msg); cmd != nil {
+		//	//			cmds = append(cmds, cmd)
+		//	//		}
+		//	//	}
+		//	//	return m, tea.Batch(cmds...)
 	}
 
 	return m, nil
