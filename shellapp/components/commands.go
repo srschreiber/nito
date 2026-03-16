@@ -112,15 +112,6 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-func padToLength(s string, length int) string {
-	runes := []rune(s)
-	if len(runes) >= length {
-		return s
-	}
-	padding := strings.Repeat(" ", length-len(runes))
-	return s + padding
-}
-
 func (l *CommandComponent) Render() string {
 	render := ""
 
