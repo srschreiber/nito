@@ -1,10 +1,12 @@
 package components
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/srschreiber/nito/shellapp/commands"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
 )
@@ -15,9 +17,14 @@ const (
 
 type cursorBlinkMsg struct{}
 
+type historyEntry struct {
+	text       string
+	isResponse bool
+}
+
 type CommandComponent struct {
 	Placeholder    string
-	History        []string
+	History        []historyEntry
 	focused        bool
 	textFieldValue string
 	cursorVisible  bool
@@ -26,7 +33,7 @@ type CommandComponent struct {
 
 func NewCommandComponent() *CommandComponent {
 	return &CommandComponent{
-		Placeholder:   "Type a command... (help for available commands)",
+		Placeholder:   "Type a command... (try: wcid)",
 		cursorVisible: true,
 	}
 }
@@ -93,9 +100,33 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 			if l.textFieldValue != "" {
 				for i, line := range wrapText(l.textFieldValue, types.ShellWrapWidth-10) {
 					if i == 0 {
-						l.History = append(l.History, "> "+line)
+						l.History = append(l.History, historyEntry{text: "> " + line})
 					} else {
-						l.History = append(l.History, "  "+line)
+						l.History = append(l.History, historyEntry{text: "  " + line})
+					}
+				}
+				{
+					output, signal, err := commands.ExecCommand(l.textFieldValue)
+					if err != nil {
+						l.History = append(l.History, historyEntry{text: err.Error(), isResponse: true})
+					} else if output != "" {
+						for _, para := range strings.Split(output, "\n") {
+							for _, line := range wrapText(para, types.ShellWrapWidth-10) {
+								l.History = append(l.History, historyEntry{text: line, isResponse: true})
+							}
+						}
+					}
+
+					switch signal {
+					case commands.SignalClear:
+						l.History = []historyEntry{}
+						l.scroll = 0
+						l.textFieldValue = ""
+						return nil
+
+					case commands.SignalExit:
+						l.textFieldValue = ""
+						return tea.Quit
 					}
 				}
 				l.textFieldValue = ""
@@ -129,7 +160,12 @@ func (l *CommandComponent) Render() string {
 	}
 
 	for i := viewStart; i < viewEnd; i++ {
-		render += styles.Grey.Render(l.History[i]) + "\n"
+		entry := l.History[i]
+		if entry.isResponse {
+			render += styles.ResponseStyle.Render(entry.text) + "\n"
+		} else {
+			render += styles.Grey.Render(entry.text) + "\n"
+		}
 	}
 
 	if canScrollDown {
@@ -149,7 +185,10 @@ func (l *CommandComponent) Render() string {
 		wrapped := wrapText(l.textFieldValue, types.ShellWrapWidth-10)
 		render += prompt + strings.Join(wrapped, "\n") + cursor
 	} else {
-		render += prompt + styles.Grey.Render(l.Placeholder) + cursor
+		render += prompt + cursor + styles.Grey.Render(l.Placeholder)
+	}
+	if len(l.History) > 0 {
+		render += "\n" + styles.LineStyle.Render(fmt.Sprintf("L%d/%d", viewEnd, len(l.History)))
 	}
 
 	if l.focused {

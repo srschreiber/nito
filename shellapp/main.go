@@ -78,10 +78,8 @@ func (m model) View() tea.View {
 		s += c.Render() + "\n"
 	}
 	footerText := "tab focus • j/k or arrows navigate • space/enter select"
-	s += footerText
-	rem := types.ShellWrapWidth - len(footerText)
-	s += styles.HelpStyle.Render(fmt.Sprintf("%*s", rem, " "))
-	s += styles.HelpStyle.Render("tab focus • j/k or arrows navigate • space/enter select")
+	rem := types.ShellWrapWidth - len([]rune(footerText))
+	s += styles.HelpStyle.Render(footerText + fmt.Sprintf("%*s", rem, " "))
 
 	return tea.NewView(styles.AppStyle.Render(styles.BoxStyle.Render(s)))
 }

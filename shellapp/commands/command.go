@@ -1,16 +1,46 @@
-package types
+package commands
 
 import (
 	"errors"
 	"strings"
 )
 
-var CommandNames = map[string]interface{}{
-	"help":    nil,
-	"clear":   nil,
-	"exit":    nil,
-	"history": nil,
+type Signal int
+
+const (
+	SignalNone  Signal = 0
+	SignalExit  Signal = 1
+	SignalClear Signal = 2
+)
+
+type ArgDef struct {
+	Short string // e.g. "f"
+	Long  string // e.g. "force"
+	Desc  string
 }
+
+type CommandDef struct {
+	Name string
+	Desc string
+	Args []ArgDef
+}
+
+var Registry = []CommandDef{
+	{Name: "clear", Desc: "clear the screen"},
+	{Name: "exit", Desc: "exit the shell"},
+	{Name: "history", Desc: "show command history"},
+	{Name: "wcid", Desc: "describe all commands and their arguments", Args: []ArgDef{
+		{Short: "c", Long: "command", Desc: "show details for a specific command"},
+	}},
+}
+
+var CommandNames = func() map[string]interface{} {
+	m := make(map[string]interface{}, len(Registry))
+	for _, c := range Registry {
+		m[c.Name] = nil
+	}
+	return m
+}()
 
 type ArgumentType string
 
@@ -34,9 +64,13 @@ type CommandParser struct {
 	lastTokSeen int
 }
 
+func NewParser() *CommandParser {
+	return &CommandParser{}
+}
+
 // ParseCommand takes a raw input string and parses it into a Command struct.
 // A command follows a simple structure:
-// /[COMMAND_NAME] [ARG1] [ARG2] ... [ARGN]
+// [COMMAND_NAME] [ARG1] [ARG2] ... [ARGN]
 func (pc *CommandParser) ParseCommand(input string) (Command, error) {
 	input = strings.TrimSpace(input)
 	i := 0
@@ -53,18 +87,6 @@ func (pc *CommandParser) ParseCommand(input string) (Command, error) {
 		case ' ', '\t', '\n':
 			i += 1
 			continue
-		case '/':
-			pc.lastTokSeen = i
-			name, err := pc.parseString(input)
-			if err != nil {
-				return Command{}, err
-			}
-			commandName = strings.ToLower(name)
-			// validate command name
-			if _, ok := CommandNames[commandName]; !ok {
-				return Command{}, errors.New("unknown command: " + commandName)
-			}
-			i = pc.lastTokSeen
 		case '-':
 			pc.lastTokSeen = i
 			argumentType := ArgumentShortForm
@@ -90,7 +112,6 @@ func (pc *CommandParser) ParseCommand(input string) (Command, error) {
 			commandArgs = append(commandArgs, &arg)
 			i = pc.lastTokSeen
 		default:
-			// if we have a previous arg, this is a value for it
 			if previousArg != nil {
 				pc.lastTokSeen = i - 1
 				value, err := pc.parseString(input)
@@ -98,6 +119,17 @@ func (pc *CommandParser) ParseCommand(input string) (Command, error) {
 					return Command{}, err
 				}
 				previousArg.Values = append(previousArg.Values, value)
+				i = pc.lastTokSeen
+			} else if commandName == "" {
+				pc.lastTokSeen = i - 1
+				name, err := pc.parseString(input)
+				if err != nil {
+					return Command{}, err
+				}
+				commandName = strings.ToLower(name)
+				if _, ok := CommandNames[commandName]; !ok {
+					return Command{}, errors.New("unknown command: " + commandName)
+				}
 				i = pc.lastTokSeen
 			} else {
 				return Command{}, errors.New("unexpected token: " + string(c))

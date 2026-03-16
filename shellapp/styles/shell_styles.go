@@ -45,4 +45,12 @@ var (
 			Bold(true)
 
 	Grey = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+
+	ResponseStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245")).
+			Italic(true)
+
+	LineStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Faint(true)
 )

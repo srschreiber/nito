@@ -1,4 +1,4 @@
-package types
+package commands
 
 import (
 	"testing"
@@ -17,22 +17,22 @@ func TestParseCommand(t *testing.T) {
 	}{
 		{
 			name:  "simple command no args",
-			input: "/help",
-			want:  Command{Name: "help", Args: []Argument{}},
+			input: "wcid",
+			want:  Command{Name: "wcid", Args: []Argument{}},
 		},
 		{
 			name:  "command with leading/trailing whitespace",
-			input: "  /clear  ",
+			input: "  clear  ",
 			want:  Command{Name: "clear", Args: []Argument{}},
 		},
 		{
 			name:  "command uppercased",
-			input: "/HELP",
-			want:  Command{Name: "help", Args: []Argument{}},
+			input: "WCID",
+			want:  Command{Name: "wcid", Args: []Argument{}},
 		},
 		{
 			name:  "short flag no value",
-			input: "/history -n",
+			input: "history -n",
 			want: Command{
 				Name: "history",
 				Args: []Argument{
@@ -42,7 +42,7 @@ func TestParseCommand(t *testing.T) {
 		},
 		{
 			name:  "long flag no value",
-			input: "/history --count",
+			input: "history --count",
 			want: Command{
 				Name: "history",
 				Args: []Argument{
@@ -52,7 +52,7 @@ func TestParseCommand(t *testing.T) {
 		},
 		{
 			name:  "short flag with single value",
-			input: "/history -n 10",
+			input: "history -n 10",
 			want: Command{
 				Name: "history",
 				Args: []Argument{
@@ -62,7 +62,7 @@ func TestParseCommand(t *testing.T) {
 		},
 		{
 			name:  "long flag with single value",
-			input: "/history --count 10",
+			input: "history --count 10",
 			want: Command{
 				Name: "history",
 				Args: []Argument{
@@ -72,7 +72,7 @@ func TestParseCommand(t *testing.T) {
 		},
 		{
 			name:  "flag with multiple values",
-			input: "/history -n foo bar",
+			input: "history -n foo bar",
 			want: Command{
 				Name: "history",
 				Args: []Argument{
@@ -82,7 +82,7 @@ func TestParseCommand(t *testing.T) {
 		},
 		{
 			name:  "multiple flags",
-			input: "/history -n 5 --verbose",
+			input: "history -n 5 --verbose",
 			want: Command{
 				Name: "history",
 				Args: []Argument{
@@ -93,12 +93,12 @@ func TestParseCommand(t *testing.T) {
 		},
 		{
 			name:    "unknown command",
-			input:   "/unknown",
+			input:   "unknown",
 			wantErr: true,
 		},
 		{
 			name:    "value before any flag",
-			input:   "/help something",
+			input:   "wcid something",
 			wantErr: true,
 		},
 	}
