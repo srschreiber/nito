@@ -27,7 +27,9 @@ func wcid(args []Argument) string {
 		if filter != "" && cmd.Name != filter {
 			continue
 		}
-		line := fmt.Sprintf("/%s  %s", cmd.Name, cmd.Desc)
+		// first, replace all newlines in description with newline + tab
+		cmd.Desc = strings.ReplaceAll(cmd.Desc, "\n", "\n\t")
+		line := fmt.Sprintf("%s\n\t%s", cmd.Name, cmd.Desc)
 		lines = append(lines, line)
 		for _, arg := range cmd.Args {
 			var flag string
@@ -39,8 +41,10 @@ func wcid(args []Argument) string {
 			default:
 				flag = "-" + arg.Short
 			}
-			lines = append(lines, fmt.Sprintf("  %s  %s", flag, arg.Desc))
+			lines = append(lines, fmt.Sprintf("\t%s  %s", flag, arg.Desc))
 		}
+		// add newline separator between commands
+		lines = append(lines, "")
 	}
 	if len(lines) == 0 {
 		return "unknown command: " + filter
