@@ -17,14 +17,15 @@ type model struct {
 }
 
 func initialModel() model {
-	list := components.NewListSelectionComponent(
-		"What should we buy at the market?",
-		[]string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
-	)
+	// example
+	//list := components.NewListSelectionComponent(
+	//	"What should we buy at the market?",
+	//	[]string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
+	//)
 
 	command := components.NewCommandComponent()
 	m := model{
-		comps: []components.Component{list, command},
+		comps: []components.Component{command},
 	}
 	m.comps[0].SetFocused(true)
 	return m
@@ -57,14 +58,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-	default:
-		var cmds []tea.Cmd
-		for _, c := range m.comps {
-			if cmd := c.Update(msg); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-		return m, tea.Batch(cmds...)
+		//default:
+		//	var cmds []tea.Cmd
+		//	for _, c := range m.comps {
+		//		if cmd := c.Update(msg); cmd != nil {
+		//			cmds = append(cmds, cmd)
+		//		}
+		//	}
+		//	return m, tea.Batch(cmds...)
 	}
 
 	return m, nil
