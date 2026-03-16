@@ -91,8 +91,12 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 			return nil
 		case "enter":
 			if l.textFieldValue != "" {
-				for _, line := range wrapText(l.textFieldValue, types.ShellWrapWidth-len(" > ")) {
-					l.History = append(l.History, "> "+line)
+				for i, line := range wrapText(l.textFieldValue, types.ShellWrapWidth-10) {
+					if i == 0 {
+						l.History = append(l.History, "> "+line)
+					} else {
+						l.History = append(l.History, "  "+line)
+					}
 				}
 				l.textFieldValue = ""
 				l.scroll = 0
