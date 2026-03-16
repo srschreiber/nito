@@ -1,15 +1,16 @@
 package components
 
 import (
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/srschreiber/nito/shellapp/styles"
+	"github.com/srschreiber/nito/shellapp/types"
 )
 
 const (
-	maxHistoryRows   = 10
-	historyWrapWidth = 80
+	maxHistoryRows = 10
 )
 
 type cursorBlinkMsg struct{}
@@ -90,8 +91,8 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 			return nil
 		case "enter":
 			if l.textFieldValue != "" {
-				for _, line := range wrapText(l.textFieldValue, historyWrapWidth) {
-					l.History = append(l.History, line)
+				for _, line := range wrapText(l.textFieldValue, types.ShellWrapWidth-len(" > ")) {
+					l.History = append(l.History, "> "+line)
 				}
 				l.textFieldValue = ""
 				l.scroll = 0
@@ -105,6 +106,15 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+func padToLength(s string, length int) string {
+	runes := []rune(s)
+	if len(runes) >= length {
+		return s
+	}
+	padding := strings.Repeat(" ", length-len(runes))
+	return s + padding
 }
 
 func (l *CommandComponent) Render() string {
@@ -141,7 +151,8 @@ func (l *CommandComponent) Render() string {
 
 	prompt := styles.PromptStyle.Render("> ")
 	if l.textFieldValue != "" {
-		render += prompt + l.textFieldValue + cursor
+		wrapped := wrapText(l.textFieldValue, types.ShellWrapWidth-10)
+		render += prompt + strings.Join(wrapped, "\n") + cursor
 	} else {
 		render += prompt + styles.Grey.Render(l.Placeholder) + cursor
 	}

@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/srschreiber/nito/shellapp/components"
 	"github.com/srschreiber/nito/shellapp/styles"
+	"github.com/srschreiber/nito/shellapp/types"
 )
 
 type model struct {
@@ -76,6 +77,10 @@ func (m model) View() tea.View {
 	for _, c := range m.comps {
 		s += c.Render() + "\n"
 	}
+	footerText := "tab focus • j/k or arrows navigate • space/enter select"
+	s += footerText
+	rem := types.ShellWrapWidth - len(footerText)
+	s += styles.HelpStyle.Render(fmt.Sprintf("%*s", rem, " "))
 	s += styles.HelpStyle.Render("tab focus • j/k or arrows navigate • space/enter select")
 
 	return tea.NewView(styles.AppStyle.Render(styles.BoxStyle.Render(s)))
