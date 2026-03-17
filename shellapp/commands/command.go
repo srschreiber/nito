@@ -28,9 +28,16 @@ type CommandDef struct {
 var Registry = []CommandDef{
 	{Name: "clear", Desc: "clear the screen"},
 	{Name: "exit", Desc: "exit the shell"},
-	{Name: "history", Desc: "show command history"},
+	{Name: "register", Desc: "register a user ID with a broker (must be done before connect)", Args: []ArgDef{
+		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:7070)"},
+		{Short: "u", Long: "user", Desc: "user ID to register"},
+	}},
 	{Name: "connect", Desc: "establish a persistent WebSocket connection to a broker", Args: []ArgDef{
-		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:8080)"},
+		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:7070)"},
+		{Short: "u", Long: "user", Desc: "user ID to connect as (must be registered first)"},
+	}},
+	{Name: "echo", Desc: "send a message to the broker and receive it back (max 1024 chars)", Args: []ArgDef{
+		{Short: "m", Long: "message", Desc: "message text to echo"},
 	}},
 	{Name: "ping", Desc: "test connectivity to a broker via WebSocket", Args: []ArgDef{
 		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:7070)"},

@@ -196,9 +196,14 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 		}
 	}
 
+	userID := ""
+	if s := connection.CurrentSession(); s != nil {
+		userID = s.UserID
+	}
 	connMsg := types.ConnectionStatusMsg{
 		Connected: connection.IsConnected(),
 		BrokerURL: connection.BrokerURL(),
+		UserID:    userID,
 	}
 	emitConn := func() tea.Msg { return connMsg }
 

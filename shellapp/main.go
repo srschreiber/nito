@@ -13,8 +13,8 @@ import (
 
 // Layout constants (lipgloss content dimensions, excluding borders/padding).
 const (
-	histWidth  = 55
-	histHeight = 18
+	histWidth  = 110
+	histHeight = 36
 	statWidth  = 22
 	// statHeight matches histHeight for a uniform top row
 	cmdWidth = histWidth + statWidth + 8 // approx combined box overhead

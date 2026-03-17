@@ -10,6 +10,7 @@ import (
 type StatusComponent struct {
 	connected bool
 	brokerURL string
+	userID    string
 	focused   bool
 	width     int
 	height    int
@@ -29,6 +30,7 @@ func (s *StatusComponent) Update(msg tea.Msg) tea.Cmd {
 	if m, ok := msg.(types.ConnectionStatusMsg); ok {
 		s.connected = m.Connected
 		s.brokerURL = m.BrokerURL
+		s.userID = m.UserID
 	}
 	return nil
 }
@@ -39,7 +41,8 @@ func (s *StatusComponent) Render() string {
 	var statusLine string
 	if s.connected {
 		statusLine = styles.StatusConnectedStyle.Render("● Connected") +
-			"\n" + styles.Grey.Render("  "+s.brokerURL)
+			"\n" + styles.Grey.Render("  "+s.brokerURL) +
+			"\n" + styles.Grey.Render("  user: "+s.userID)
 	} else {
 		statusLine = styles.StatusDisconnectedStyle.Render("● Disconnected")
 	}

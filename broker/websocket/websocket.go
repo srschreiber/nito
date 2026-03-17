@@ -5,50 +5,81 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/srschreiber/nito/broker/types"
 )
 
-type Broker struct {
-	Address   string `description:"Websocket broker address"`
-	upgrader  websocket.Upgrader
-	clientMap map[string]*Client `description:"Map of connected clients by user ID"`
+type Session struct {
+	UserID string
 }
 
 type Client struct {
-	UserID     string          `description:"Unique identifier for the client"`
-	send       chan []byte     `description:"Channel for sending messages to the client"`
-	connection *websocket.Conn `description:"Websocket connection"`
+	Session    Session
+	send       chan []byte
+	connection *websocket.Conn
+}
+
+type Broker struct {
+	Address   string `description:"Websocket broker address"`
+	upgrader  websocket.Upgrader
+	mu        sync.RWMutex
+	clientMap map[string]*Client `description:"Map of connected clients by user ID"`
+	userStore map[string]bool    `description:"In-memory set of registered user IDs"`
 }
 
 func NewBroker(address string) *Broker {
 	return &Broker{
 		Address:   address,
 		clientMap: make(map[string]*Client),
-		upgrader:  websocket.Upgrader{},
+		userStore: make(map[string]bool),
+		upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 	}
 }
 
-func (b *Broker) AddClient(client *Client) {
-	if b.clientMap[client.UserID] != nil {
-		log.Printf("warning: client with userID %s already exists, will reuse existing", client.UserID)
-		return
-	}
+// RegisterUser adds a user to the in-memory store.
+func (b *Broker) RegisterUser(userID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.userStore[userID] = true
+	log.Printf("registered user: %s", userID)
+}
 
-	b.clientMap[client.UserID] = client
+func (b *Broker) isRegistered(userID string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.userStore[userID]
+}
+
+func (b *Broker) addClient(client *Client) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.clientMap[client.Session.UserID] != nil {
+		log.Printf("warning: client with userID %s already connected", client.Session.UserID)
+		return false
+	}
+	b.clientMap[client.Session.UserID] = client
+	return true
 }
 
 func (b *Broker) removeClient(client *Client) {
-	delete(b.clientMap, client.UserID)
-	log.Printf("client %s disconnected", client.UserID)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.clientMap, client.Session.UserID)
+	log.Printf("client %s disconnected", client.Session.UserID)
 }
 
-func (b *Broker) WsConnect(ctx context.Context, broker *Broker, w http.ResponseWriter, r *http.Request) {
+func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("user_id")
 	if userID == "" {
 		http.Error(w, "missing user_id", http.StatusUnauthorized)
+		return
+	}
+
+	if !b.isRegistered(userID) {
+		http.Error(w, "user not registered: call POST /api/v0/register first", http.StatusUnauthorized)
 		return
 	}
 
@@ -58,23 +89,27 @@ func (b *Broker) WsConnect(ctx context.Context, broker *Broker, w http.ResponseW
 		return
 	}
 
-	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second)) // set initial read deadline`
+	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(30 * time.Second)) // extend read deadline on pong
+		return conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	})
 
 	client := &Client{
-		UserID:     userID,
+		Session:    Session{UserID: userID},
 		connection: conn,
 		send:       make(chan []byte, 32),
 	}
 
-	broker.AddClient(client)
+	if !b.addClient(client) {
+		http.Error(w, "user already connected", http.StatusConflict)
+		_ = conn.Close()
+		return
+	}
 	log.Println("client connected:", userID)
 
 	go b.writeLoop(ctx, client)
 
-	if err = b.readLoop(ctx, broker, client); err != nil {
+	if err = b.readLoop(ctx, client); err != nil {
 		log.Println("read loop error for client", userID, ":", err)
 	}
 
@@ -88,7 +123,6 @@ func (b *Broker) writeLoop(ctx context.Context, client *Client) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("client disconnected:", client.UserID)
 			return
 		case <-pingTicker.C:
 			if err := client.connection.WriteMessage(websocket.PingMessage, nil); err != nil {
@@ -97,7 +131,6 @@ func (b *Broker) writeLoop(ctx context.Context, client *Client) {
 			}
 		case msg, ok := <-client.send:
 			if !ok {
-				log.Println("client disconnected:", client.UserID)
 				_ = client.connection.Close()
 				return
 			}
@@ -109,7 +142,7 @@ func (b *Broker) writeLoop(ctx context.Context, client *Client) {
 	}
 }
 
-func (b *Broker) readLoop(ctx context.Context, broker *Broker, client *Client) error {
+func (b *Broker) readLoop(ctx context.Context, client *Client) error {
 	defer client.connection.Close()
 
 	go func() {
@@ -118,7 +151,6 @@ func (b *Broker) readLoop(ctx context.Context, broker *Broker, client *Client) e
 	}()
 
 	for {
-
 		messageType, data, err := client.connection.ReadMessage()
 		if err != nil {
 			return err
@@ -128,12 +160,56 @@ func (b *Broker) readLoop(ctx context.Context, broker *Broker, client *Client) e
 		case websocket.TextMessage:
 			var msg types.WebsocketMessage
 			if err := json.Unmarshal(data, &msg); err != nil {
+				log.Printf("invalid message from %s: %v", client.Session.UserID, err)
 				continue
 			}
-
-			//if err := c.handleMessage(msg); err != nil {
-			//	continue
-			//}
+			log.Printf("message from %s: rpc=%s requestId=%s", client.Session.UserID, msg.RPCName, msg.RequestID)
+			b.handleRPC(client, msg)
 		}
 	}
+}
+
+func (b *Broker) handleRPC(client *Client, msg types.WebsocketMessage) {
+	switch msg.RPCName {
+	case "echo":
+		b.handleEcho(client, msg)
+	default:
+		log.Printf("unknown RPC %q from %s", msg.RPCName, client.Session.UserID)
+	}
+}
+
+func (b *Broker) handleEcho(client *Client, msg types.WebsocketMessage) {
+	var payload types.EchoPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("echo: bad payload from %s: %v", client.Session.UserID, err)
+		return
+	}
+
+	// Chop message to max allowed characters.
+	runes := []rune(payload.Text)
+	if len(runes) > types.EchoMaxChars {
+		runes = runes[:types.EchoMaxChars]
+	}
+	payload.Text = string(runes)
+
+	respPayload, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("echo: marshal error: %v", err)
+		return
+	}
+
+	response := types.WebsocketMessage{
+		RPCName:   "echo",
+		RequestID: msg.RequestID,
+		UserID:    client.Session.UserID,
+		Nonce:     msg.Nonce,
+		Timestamp: time.Now().Unix(),
+		Payload:   respPayload,
+	}
+	data, err := json.Marshal(response)
+	if err != nil {
+		log.Printf("echo: marshal response error: %v", err)
+		return
+	}
+	client.send <- data
 }

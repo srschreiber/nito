@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	brokertypes "github.com/srschreiber/nito/broker/types"
 	"github.com/srschreiber/nito/shellapp/connection"
 )
 
@@ -54,35 +55,114 @@ func wcid(args []Argument) string {
 
 var parser = NewParser()
 
-func connectCmd(args []Argument) (string, error) {
-	brokerURL := ""
+func extractArg(args []Argument, short, long string) string {
 	for _, a := range args {
-		if a.Name == "b" || a.Name == "broker" {
+		if a.Name == short || a.Name == long {
 			if len(a.Values) > 0 {
-				brokerURL = a.Values[0]
+				return a.Values[0]
 			}
 		}
 	}
+	return ""
+}
+
+// extractArgValues returns all values for a flag, supporting multi-word inputs
+// like `echo -m hello world` where Values = ["hello", "world"].
+func extractArgValues(args []Argument, short, long string) []string {
+	for _, a := range args {
+		if a.Name == short || a.Name == long {
+			return a.Values
+		}
+	}
+	return nil
+}
+
+func registerCmd(args []Argument) (string, error) {
+	brokerURL := extractArg(args, "b", "broker")
+	if brokerURL == "" {
+		return "", errors.New("register: -b/--broker <url> is required")
+	}
+	userID := extractArg(args, "u", "user")
+	if userID == "" {
+		return "", errors.New("register: -u/--user <id> is required")
+	}
+
+	if err := connection.Register(brokerURL, userID); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("registered user %q at %s", userID, brokerURL), nil
+}
+
+func echoCmd(args []Argument) (string, error) {
+	s := connection.CurrentSession()
+	if s == nil {
+		return "", errors.New("echo: not connected (use connect first)")
+	}
+
+	text := strings.Join(extractArgValues(args, "m", "message"), " ")
+	if text == "" {
+		return "", errors.New("echo: -m/--message <text> is required")
+	}
+
+	payload, err := json.Marshal(brokertypes.EchoPayload{Text: text})
+	if err != nil {
+		return "", fmt.Errorf("echo: %w", err)
+	}
+	msg := brokertypes.WebsocketMessage{
+		RPCName:   "echo",
+		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
+		UserID:    s.UserID,
+		Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),
+		Timestamp: time.Now().Unix(),
+		Payload:   payload,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return "", fmt.Errorf("echo: %w", err)
+	}
+
+	if err := connection.Send(data); err != nil {
+		return "", fmt.Errorf("echo: send: %w", err)
+	}
+
+	resp, err := connection.Receive(5 * time.Second)
+	if err != nil {
+		return "", fmt.Errorf("echo: receive: %w", err)
+	}
+
+	var respMsg brokertypes.WebsocketMessage
+	if err := json.Unmarshal(resp, &respMsg); err != nil {
+		return "", fmt.Errorf("echo: bad response: %w", err)
+	}
+
+	var respPayload brokertypes.EchoPayload
+	if err := json.Unmarshal(respMsg.Payload, &respPayload); err != nil {
+		return "", fmt.Errorf("echo: bad payload: %w", err)
+	}
+
+	return respPayload.Text, nil
+}
+
+func connectCmd(args []Argument) (string, error) {
+	brokerURL := extractArg(args, "b", "broker")
 	if brokerURL == "" {
 		return "", errors.New("connect: -b/--broker <url> is required")
 	}
+	userID := extractArg(args, "u", "user")
+	if userID == "" {
+		return "", errors.New("connect: -u/--user <id> is required")
+	}
 
-	if err := connection.Connect(brokerURL); err != nil {
+	if err := connection.Connect(brokerURL, userID); err != nil {
 		return "", fmt.Errorf("connect: %w", err)
 	}
 
-	return "connected to " + connection.BrokerURL(), nil
+	return fmt.Sprintf("connected to %s as %q", connection.BrokerURL(), userID), nil
 }
 
 func ping(args []Argument) (string, error) {
-	brokerURL := ""
-	for _, a := range args {
-		if a.Name == "b" || a.Name == "broker" {
-			if len(a.Values) > 0 {
-				brokerURL = a.Values[0]
-			}
-		}
-	}
+	brokerURL := extractArg(args, "b", "broker")
 	if brokerURL == "" {
 		return "", errors.New("ping: -b/--broker <url> is required")
 	}
@@ -121,7 +201,6 @@ func ping(args []Argument) (string, error) {
 // - output: the string output to display to the user (if any)
 // - signal: an optional status code (e.g., for success/failure)
 // - error: any error that occurred during command execution
-// Right now, everything is hardcoded
 func ExecCommand(cmd string) (string, Signal, error) {
 	parsedCommand, err := parser.ParseCommand(cmd)
 	if err != nil {
@@ -135,6 +214,12 @@ func ExecCommand(cmd string) (string, Signal, error) {
 		return "Exiting the shell...", SignalExit, nil
 	case "history":
 		return "Command history is not implemented yet.", SignalNone, nil
+	case "echo":
+		out, err := echoCmd(parsedCommand.Args)
+		return out, SignalNone, err
+	case "register":
+		out, err := registerCmd(parsedCommand.Args)
+		return out, SignalNone, err
 	case "connect":
 		out, err := connectCmd(parsedCommand.Args)
 		return out, SignalNone, err

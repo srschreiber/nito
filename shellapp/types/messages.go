@@ -4,4 +4,5 @@ package types
 type ConnectionStatusMsg struct {
 	Connected bool
 	BrokerURL string
+	UserID    string
 }
