@@ -118,6 +118,33 @@ func wsConnect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// todo:
+	//func wsConnect(broker *Broker, w http.ResponseWriter, r *http.Request) {
+	//	userID := r.URL.Query().Get("user_id") // real app should authenticate properly
+	//	if userID == "" {
+	//		http.Error(w, "missing user_id", http.StatusUnauthorized)
+	//		return
+	//	}
+	//
+	//	conn, err := upgrader.Upgrade(w, r, nil)
+	//	if err != nil {
+	//		log.Println("upgrade error:", err)
+	//		return
+	//	}
+	//
+	//	client := &Client{
+	//		UserID: userID,
+	//		Conn:   conn,
+	//		Send:   make(chan []byte, 32),
+	//	}
+	//
+	//	broker.AddClient(client)
+	//	log.Println("client connected:", userID)
+	//
+	//	go writeLoop(client)
+	//
+	//	readLoop(broker, client)
+	//}
 }
 
 func wsPing(w http.ResponseWriter, r *http.Request) {
