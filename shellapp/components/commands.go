@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/srschreiber/nito/shellapp/commands"
 	"github.com/srschreiber/nito/shellapp/connection"
+	"github.com/srschreiber/nito/shellapp/history"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
 )
@@ -35,6 +36,7 @@ func NewCommandComponent(width int) *CommandComponent {
 		cursorVisible: true,
 		historyIdx:    -1,
 		width:         width,
+		cmdHistory:    history.Load(),
 	}
 }
 
@@ -211,6 +213,7 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 	case commands.SignalClear:
 		return tea.Batch(func() tea.Msg { return ClearHistoryMsg{} }, emitConn)
 	case commands.SignalExit:
+		_ = history.Save(l.cmdHistory)
 		return tea.Quit
 	}
 
