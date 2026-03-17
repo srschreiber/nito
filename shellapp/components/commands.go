@@ -173,7 +173,7 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 	l.cursorPos = 0
 
 	var entries []historyEntry
-	for i, line := range wrapText(cmd, types.ShellWrapWidth-10) {
+	for i, line := range wrapText(cmd, types.HistWrapWidth) {
 		if i == 0 {
 			entries = append(entries, historyEntry{text: "> " + line})
 		} else {
@@ -183,10 +183,14 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 
 	output, signal, err := commands.ExecCommand(cmd)
 	if err != nil {
-		entries = append(entries, historyEntry{text: err.Error(), isResponse: true})
+		for _, para := range strings.Split(err.Error(), "\n") {
+			for _, line := range wrapText(para, types.HistWrapWidth) {
+				entries = append(entries, historyEntry{text: line, isResponse: true})
+			}
+		}
 	} else if output != "" {
 		for _, para := range strings.Split(output, "\n") {
-			for _, line := range wrapText(para, types.ShellWrapWidth-10) {
+			for _, line := range wrapText(para, types.HistWrapWidth) {
 				entries = append(entries, historyEntry{text: line, isResponse: true})
 			}
 		}

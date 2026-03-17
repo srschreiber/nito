@@ -69,4 +69,8 @@ var (
 	StatusLabelStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("243")).
 				Faint(true)
+
+	SectionTitleStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("147")).
+				Bold(true)
 )

@@ -34,7 +34,7 @@ func (s *StatusComponent) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (s *StatusComponent) Render() string {
-	label := styles.StatusLabelStyle.Render("STATUS")
+	label := styles.SectionTitleStyle.Render("Status")
 
 	var statusLine string
 	if s.connected {

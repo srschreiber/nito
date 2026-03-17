@@ -21,10 +21,6 @@ type AppendHistoryMsg struct {
 // ClearHistoryMsg is emitted by CommandComponent when history should be cleared.
 type ClearHistoryMsg struct{}
 
-var historyTitleStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("147")).
-	Bold(true)
-
 type ConversationHistory struct {
 	entries []historyEntry
 	scroll  int
@@ -89,17 +85,37 @@ func (h *ConversationHistory) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (h *ConversationHistory) Render() string {
-	render := historyTitleStyle.Render("Conversation") + "\n"
+	render := styles.SectionTitleStyle.Render("Conversation") + "\n"
 
 	if len(h.entries) == 0 {
 		render += styles.Grey.Render("No messages yet.")
 	} else {
+		// rows available for entries + indicators (title and line counter always occupy 2)
+		rows := h.height - 2
+
+		// "↓ more" is known before we pick the window (depends only on scroll)
+		showBelow := h.scroll > 0
+		if showBelow {
+			rows--
+		}
+
 		viewEnd := len(h.entries) - h.scroll
-		viewStart := viewEnd - h.visibleRows()
+		viewStart := viewEnd - rows
 		if viewStart < 0 {
 			viewStart = 0
 		}
-		if viewStart > 0 {
+
+		// "↑ more" depends on viewStart; if it will show, shrink the window by 1
+		showAbove := viewStart > 0
+		if showAbove {
+			rows--
+			viewStart = viewEnd - rows
+			if viewStart < 0 {
+				viewStart = 0
+			}
+		}
+
+		if showAbove {
 			render += styles.Grey.Render("↑ more") + "\n"
 		}
 		for i := viewStart; i < viewEnd; i++ {
@@ -110,7 +126,7 @@ func (h *ConversationHistory) Render() string {
 				render += styles.Grey.Render(entry.text) + "\n"
 			}
 		}
-		if h.scroll > 0 {
+		if showBelow {
 			render += styles.Grey.Render("↓ more") + "\n"
 		}
 		render += styles.LineStyle.Render(fmt.Sprintf("L%d/%d", viewEnd, len(h.entries)))
