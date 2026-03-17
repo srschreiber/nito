@@ -20,6 +20,11 @@ func NewStatusComponent(width, height int) *StatusComponent {
 	return &StatusComponent{width: width, height: height}
 }
 
+func (s *StatusComponent) SetSize(width, height int) {
+	s.width = width
+	s.height = height
+}
+
 func (s *StatusComponent) Init() tea.Cmd { return nil }
 
 func (s *StatusComponent) SetFocused(focused bool) {

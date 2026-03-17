@@ -24,6 +24,7 @@ type CommandComponent struct {
 	cursorVisible  bool
 	blinkGen       int
 	width          int
+	histWrapWidth  int // usable text width inside the history box
 	// command history (up/down navigation)
 	cmdHistory []string
 	historyIdx int    // -1 = not navigating
@@ -36,8 +37,24 @@ func NewCommandComponent(width int) *CommandComponent {
 		cursorVisible: true,
 		historyIdx:    -1,
 		width:         width,
+		histWrapWidth: histWrapFromWidth(width),
 		cmdHistory:    history.Load(),
 	}
+}
+
+// histWrapFromWidth derives the text wrap width from the history content width.
+// The history box uses Padding(0,1) so each side subtracts 1 from usable width.
+func histWrapFromWidth(histWidth int) int {
+	w := histWidth - 2
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
+func (c *CommandComponent) SetWidth(cmdWidth, histWidth int) {
+	c.width = cmdWidth
+	c.histWrapWidth = histWrapFromWidth(histWidth)
 }
 
 func (l *CommandComponent) newBlinkCmd() tea.Cmd {
@@ -175,7 +192,7 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 	l.cursorPos = 0
 
 	var entries []historyEntry
-	for i, line := range wrapText(cmd, types.HistWrapWidth) {
+	for i, line := range wrapText(cmd, l.histWrapWidth) {
 		if i == 0 {
 			entries = append(entries, historyEntry{text: "> " + line})
 		} else {
@@ -186,13 +203,13 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 	output, signal, err := commands.ExecCommand(cmd)
 	if err != nil {
 		for _, para := range strings.Split(err.Error(), "\n") {
-			for _, line := range wrapText(para, types.HistWrapWidth) {
+			for _, line := range wrapText(para, l.histWrapWidth) {
 				entries = append(entries, historyEntry{text: line, isResponse: true})
 			}
 		}
 	} else if output != "" {
 		for _, para := range strings.Split(output, "\n") {
-			for _, line := range wrapText(para, types.HistWrapWidth) {
+			for _, line := range wrapText(para, l.histWrapWidth) {
 				entries = append(entries, historyEntry{text: line, isResponse: true})
 			}
 		}

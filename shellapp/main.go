@@ -11,31 +11,81 @@ import (
 	"github.com/srschreiber/nito/shellapp/types"
 )
 
-// Layout constants (lipgloss content dimensions, excluding borders/padding).
+// Box overhead constants (lipgloss borders + padding).
+// History/Status: RoundedBorder (all 4 sides) + Padding(0,1) → 4 wide, 2 tall.
+// Command: ThickBorder (left only) + Padding(0,1) → 3 wide, 0 tall.
+// AppStyle: Padding(1,2) → 4 wide, 2 tall.
 const (
-	histWidth  = 110
-	histHeight = 36
-	statWidth  = 22
-	// statHeight matches histHeight for a uniform top row
-	cmdWidth = histWidth + statWidth + 8 // approx combined box overhead
+	histBoxOverheadW = 4
+	histBoxOverheadH = 2
+	statBoxOverheadW = 4
+	cmdBoxOverheadW  = 3
+	appPaddingW      = 4
 )
 
+// layout holds computed content dimensions for each component.
+type layout struct {
+	histW, histH int
+	statW        int
+	cmdW         int
+}
+
+// computeLayout derives component content dimensions from the terminal size.
+// History box is 60% of terminal width and 80% of terminal height (visual box
+// including borders). Status takes the remaining top-row width. Command spans
+// the full usable width.
+func computeLayout(termW, termH int) layout {
+	if termW < 30 {
+		termW = 30
+	}
+	if termH < 12 {
+		termH = 12
+	}
+
+	usableW := termW - appPaddingW
+
+	histBoxW := int(float64(termW) * 0.6)
+	histBoxH := int(float64(termH) * 0.8)
+
+	histW := histBoxW - histBoxOverheadW
+	histH := histBoxH - histBoxOverheadH
+
+	statBoxW := usableW - histBoxW
+	statW := statBoxW - statBoxOverheadW
+
+	cmdW := usableW - cmdBoxOverheadW
+
+	if histW < 10 {
+		histW = 10
+	}
+	if histH < 3 {
+		histH = 3
+	}
+	if statW < 5 {
+		statW = 5
+	}
+	if cmdW < 10 {
+		cmdW = 10
+	}
+
+	return layout{histW: histW, histH: histH, statW: statW, cmdW: cmdW}
+}
+
 type model struct {
-	width            int
-	height           int
-	focusedComponent int
-	history          *components.ConversationHistory
-	status           *components.StatusComponent
-	command          *components.CommandComponent
-	comps            []components.Component
+	history *components.ConversationHistory
+	status  *components.StatusComponent
+	command *components.CommandComponent
+	comps   []components.Component
 	// focusable holds the comps indices that participate in tab cycling
-	focusable []int
+	focusable        []int
+	focusedComponent int
 }
 
 func initialModel() model {
-	history := components.NewConversationHistory(histWidth, histHeight)
-	status := components.NewStatusComponent(statWidth, histHeight)
-	command := components.NewCommandComponent(cmdWidth)
+	l := computeLayout(120, 40) // reasonable default until WindowSizeMsg arrives
+	history := components.NewConversationHistory(l.histW, l.histH)
+	status := components.NewStatusComponent(l.statW, l.histH)
+	command := components.NewCommandComponent(l.cmdW)
 
 	// comps: 0=history, 1=status (display-only), 2=command
 	m := model{
@@ -50,6 +100,13 @@ func initialModel() model {
 	return m
 }
 
+func (m *model) relayout(termW, termH int) {
+	l := computeLayout(termW, termH)
+	m.history.SetSize(l.histW, l.histH)
+	m.status.SetSize(l.statW, l.histH)
+	m.command.SetWidth(l.cmdW, l.histW)
+}
+
 func (m model) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	for _, c := range m.comps {
@@ -62,6 +119,9 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.relayout(msg.Width, msg.Height)
+		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":

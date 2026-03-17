@@ -33,6 +33,11 @@ func NewConversationHistory(width, height int) *ConversationHistory {
 	return &ConversationHistory{width: width, height: height}
 }
 
+func (h *ConversationHistory) SetSize(width, height int) {
+	h.width = width
+	h.height = height
+}
+
 func (h *ConversationHistory) Init() tea.Cmd { return nil }
 
 func (h *ConversationHistory) SetFocused(focused bool) {
