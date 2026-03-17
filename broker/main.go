@@ -37,10 +37,17 @@ func withValidation[Req any](handler func(w http.ResponseWriter, r *http.Request
 func main() {
 	flag.Parse()
 	log.SetFlags(0)
-	http.HandleFunc("/ping", withValidation(ping))
-	http.HandleFunc("/ws/ping", wsPing)
-	http.HandleFunc("/ws", wsConnect)
+	registerAPIs()
+	registerWebsocketEndpoints()
 	log.Fatal(http.ListenAndServe(*addr, nil))
+}
+
+func registerAPIs() {
+	http.HandleFunc("/api/v0/ping", withValidation(ping))
+}
+
+func registerWebsocketEndpoints() {
+	http.HandleFunc("/ws", wsConnect)
 }
 
 func ping(w http.ResponseWriter, _ *http.Request, req types.PingRequest) {
@@ -145,36 +152,4 @@ func wsConnect(w http.ResponseWriter, r *http.Request) {
 	//
 	//	readLoop(broker, client)
 	//}
-}
-
-func wsPing(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("upgrade error:", err)
-		return
-	}
-	defer conn.Close()
-
-	_, msg, err := conn.ReadMessage()
-	if err != nil {
-		log.Println("read error:", err)
-		return
-	}
-
-	var req types.PingRequest
-	if err := json.Unmarshal(msg, &req); err != nil {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"invalid json"}`))
-		return
-	}
-	if err := validate.Struct(req); err != nil {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"`+err.Error()+`"}`))
-		return
-	}
-
-	resp := types.PingResponse{Message: req.Message}
-	respBytes, err := json.Marshal(resp)
-	if err != nil {
-		return
-	}
-	_ = conn.WriteMessage(websocket.TextMessage, respBytes)
 }
