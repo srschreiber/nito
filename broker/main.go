@@ -51,6 +51,57 @@ func ping(w http.ResponseWriter, _ *http.Request, req types.PingRequest) {
 	}
 }
 
+// TODO:
+// each user will have a unique websocket with a read and write loop
+// for example
+//
+//	type Client struct {
+//		UserID string
+//		Conn   *websocket.Conn
+//		Send   chan []byte
+//	}
+//
+//	type Broker struct {
+//		mu      sync.RWMutex
+//		clients map[string]*Client
+//	}
+//
+//	func NewBroker() *Broker {
+//		return &Broker{
+//			clients: make(map[string]*Client),
+//		}
+//	}
+//
+//	func (b *Broker) AddClient(c *Client) {
+//		b.mu.Lock()
+//		defer b.mu.Unlock()
+//		b.clients[c.UserID] = c
+//	}
+//
+//	func (b *Broker) RemoveClient(userID string) {
+//		b.mu.Lock()
+//		defer b.mu.Unlock()
+//		delete(b.clients, userID)
+//	}
+//
+//	func (b *Broker) GetClient(userID string) (*Client, bool) {
+//		b.mu.RLock()
+//		defer b.mu.RUnlock()
+//		c, ok := b.clients[userID]
+//		return c, ok
+//	}
+//
+//	func writeLoop(client *Client) {
+//		defer client.Conn.Close()
+//
+//		for msg := range client.Send {
+//			if err := client.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+//				return
+//			}
+//		}
+//	}
+//
+// then, wsConnect will get the userID from the request. Of course later we will require a signature using the user's private key, but for development it doesnt matter yet
 func wsConnect(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
