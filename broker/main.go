@@ -8,11 +8,13 @@ import (
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/srschreiber/nito/broker/database"
 	"github.com/srschreiber/nito/broker/types"
 	brokerws "github.com/srschreiber/nito/broker/websocket"
 )
 
-var addr = flag.String("addr", "localhost:7070", "http service address")
+var configPath = flag.String("config", "broker/config.yml", "path to config file")
+var migrateOnly = flag.Bool("migrate-only", false, "run migrations and exit")
 
 var validate = validator.New(validator.WithRequiredStructEnabled())
 
@@ -35,7 +37,25 @@ func main() {
 	flag.Parse()
 	log.SetFlags(0)
 
-	broker := brokerws.NewBroker(*addr)
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
+	conn, err := database.NewPostgres(cfg.DB.User, cfg.DB.Password, cfg.DB.Host, cfg.DB.Port, cfg.DB.Name)
+	if err != nil {
+		log.Fatalf("connect db: %v", err)
+	}
+	defer conn.Close(context.Background())
+
+	if err := database.RunMigrations(conn); err != nil {
+		log.Fatalf("migrations: %v", err)
+	}
+	if *migrateOnly {
+		return
+	}
+
+	broker := brokerws.NewBroker(cfg.Broker.Addr)
 	ctx := context.Background()
 
 	http.HandleFunc("/api/v0/ping", withValidation(ping))
@@ -47,8 +67,8 @@ func main() {
 		broker.WsConnect(ctx, w, r)
 	})
 
-	log.Printf("broker listening on %s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, nil))
+	log.Printf("broker listening on %s", cfg.Broker.Addr)
+	log.Fatal(http.ListenAndServe(cfg.Broker.Addr, nil))
 }
 
 func ping(w http.ResponseWriter, _ *http.Request, req types.PingRequest) {
