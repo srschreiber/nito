@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/srschreiber/nito/broker/database"
+	dbtypes "github.com/srschreiber/nito/broker/database/types"
 	"github.com/srschreiber/nito/broker/types"
 )
 
@@ -23,34 +26,45 @@ type Client struct {
 }
 
 type Broker struct {
-	Address   string `description:"Websocket broker address"`
+	Address   string
+	db        *pgxpool.Pool
 	upgrader  websocket.Upgrader
 	mu        sync.RWMutex
-	clientMap map[string]*Client `description:"Map of connected clients by user ID"`
-	userStore map[string]bool    `description:"In-memory set of registered user IDs"`
+	clientMap map[string]*Client
 }
 
-func NewBroker(address string) *Broker {
+func NewBroker(address string, db *pgxpool.Pool) *Broker {
 	return &Broker{
 		Address:   address,
+		db:        db,
 		clientMap: make(map[string]*Client),
-		userStore: make(map[string]bool),
 		upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 	}
 }
 
-// RegisterUser adds a user to the in-memory store.
-func (b *Broker) RegisterUser(userID string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.userStore[userID] = true
-	log.Printf("registered user: %s", userID)
+// RegisterUser creates a new user in the DB, or returns the existing one if the username is taken.
+func (b *Broker) RegisterUser(ctx context.Context, username, publicKey string) (*types.RegisterResponse, error) {
+	var existing dbtypes.User
+	err := b.db.QueryRow(ctx,
+		`SELECT id, username, public_key, updated_at, created_at FROM users WHERE username = $1`,
+		username,
+	).Scan(&existing.ID, &existing.Username, &existing.PublicKey, &existing.UpdatedAt, &existing.CreatedAt)
+	if err == nil {
+		return &types.RegisterResponse{ID: existing.ID, Username: existing.Username, AlreadyRegistered: true}, nil
+	}
+
+	user, err := database.CreateUser(ctx, b.db, username, &publicKey)
+	if err != nil {
+		return nil, err
+	}
+	return &types.RegisterResponse{ID: user.ID, Username: user.Username}, nil
 }
 
-func (b *Broker) isRegistered(userID string) bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.userStore[userID]
+// lookupUserID resolves a username to its UUID. Returns "" if not found.
+func (b *Broker) lookupUserID(ctx context.Context, username string) string {
+	var id string
+	_ = b.db.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, username).Scan(&id)
+	return id
 }
 
 func (b *Broker) addClient(client *Client) bool {
@@ -72,13 +86,14 @@ func (b *Broker) removeClient(client *Client) {
 }
 
 func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	userID := r.URL.Query().Get("user_id")
-	if userID == "" {
+	username := r.URL.Query().Get("user_id")
+	if username == "" {
 		http.Error(w, "missing user_id", http.StatusUnauthorized)
 		return
 	}
 
-	if !b.isRegistered(userID) {
+	userID := b.lookupUserID(ctx, username)
+	if userID == "" {
 		http.Error(w, "user not registered: call POST /api/v0/register first", http.StatusUnauthorized)
 		return
 	}
@@ -185,7 +200,6 @@ func (b *Broker) handleEcho(client *Client, msg types.WebsocketMessage) {
 		return
 	}
 
-	// Chop message to max allowed characters.
 	runes := []rune(payload.Text)
 	if len(runes) > types.EchoMaxChars {
 		runes = runes[:types.EchoMaxChars]

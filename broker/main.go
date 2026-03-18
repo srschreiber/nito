@@ -42,26 +42,39 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
+	// Single connection used only for sequential migration at startup.
 	conn, err := database.NewPostgres(cfg.DB.User, cfg.DB.Password, cfg.DB.Host, cfg.DB.Port, cfg.DB.Name)
 	if err != nil {
 		log.Fatalf("connect db: %v", err)
 	}
-	defer conn.Close(context.Background())
-
 	if err := database.RunMigrations(conn); err != nil {
 		log.Fatalf("migrations: %v", err)
 	}
+	conn.Close(context.Background())
+
 	if *migrateOnly {
 		return
 	}
 
-	broker := brokerws.NewBroker(cfg.Broker.Addr)
+	// Pool used by the broker for concurrent request handling.
+	pool, err := database.NewPool(cfg.DB.User, cfg.DB.Password, cfg.DB.Host, cfg.DB.Port, cfg.DB.Name)
+	if err != nil {
+		log.Fatalf("create pool: %v", err)
+	}
+	defer pool.Close()
+
+	broker := brokerws.NewBroker(cfg.Broker.Addr, pool)
 	ctx := context.Background()
 
 	http.HandleFunc("/api/v0/ping", withValidation(ping))
 	http.HandleFunc("/api/v0/register", withValidation(func(w http.ResponseWriter, r *http.Request, req types.RegisterRequest) {
-		broker.RegisterUser(req.UserID)
-		w.WriteHeader(http.StatusOK)
+		resp, err := broker.RegisterUser(r.Context(), req.Username, req.PublicKey)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
 	}))
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		broker.WsConnect(ctx, w, r)

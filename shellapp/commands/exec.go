@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	brokertypes "github.com/srschreiber/nito/broker/types"
 	"github.com/srschreiber/nito/shellapp/connection"
+	"github.com/srschreiber/nito/shellapp/keys"
 )
 
 func wcid(args []Argument) string {
@@ -82,16 +83,25 @@ func registerCmd(args []Argument) (string, error) {
 	if brokerURL == "" {
 		return "", errors.New("register: -b/--broker <url> is required")
 	}
-	userID := extractArg(args, "u", "user")
-	if userID == "" {
-		return "", errors.New("register: -u/--user <id> is required")
+	username := extractArg(args, "u", "user")
+	if username == "" {
+		return "", errors.New("register: -u/--user <username> is required")
 	}
 
-	if err := connection.Register(brokerURL, userID); err != nil {
+	publicKey, err := keys.LoadOrGenerate()
+	if err != nil {
+		return "", fmt.Errorf("register: key setup failed: %w", err)
+	}
+
+	resp, err := connection.Register(brokerURL, username, publicKey)
+	if err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf("registered user %q at %s", userID, brokerURL), nil
+	if resp.AlreadyRegistered {
+		return fmt.Sprintf("user %q already registered (id: %s)", username, resp.ID), nil
+	}
+	return fmt.Sprintf("registered %q successfully (id: %s)", username, resp.ID), nil
 }
 
 func echoCmd(args []Argument) (string, error) {

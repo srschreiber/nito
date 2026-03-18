@@ -18,10 +18,17 @@ type Session struct {
 	BrokerURL string
 }
 
+type RegisterResponse struct {
+	ID                string `json:"id"`
+	Username          string `json:"username"`
+	AlreadyRegistered bool   `json:"alreadyRegistered"`
+}
+
 var (
 	mu      sync.Mutex
 	conn    *websocket.Conn
 	session *Session
+	msgChan chan []byte
 )
 
 func normalizeURL(url string) string {
@@ -32,24 +39,33 @@ func normalizeURL(url string) string {
 	return url
 }
 
-// Register calls POST /api/v0/register on the broker to add the user to the
-// in-memory store. This must be called before Connect.
-func Register(brokerURL, userID string) error {
+// Register sends username and public key to the broker, creating a DB entry if the user
+// doesn't exist yet. Returns the user's ID and whether they were already registered.
+func Register(brokerURL, username, publicKey string) (*RegisterResponse, error) {
 	brokerURL = normalizeURL(brokerURL)
-	body, _ := json.Marshal(map[string]string{"userId": userID})
+	body, _ := json.Marshal(map[string]string{
+		"username":  username,
+		"publicKey": publicKey,
+	})
 	resp, err := http.Post("http://"+brokerURL+"/api/v0/register", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("register: %w", err)
+		return nil, fmt.Errorf("register: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("register: broker returned %s", resp.Status)
+		return nil, fmt.Errorf("register: broker returned %s", resp.Status)
 	}
-	return nil
+	var result RegisterResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("register: decode response: %w", err)
+	}
+	return &result, nil
 }
 
 // Connect establishes a persistent WebSocket connection to the broker.
-// The broker validates that userID was previously registered.
+// A background goroutine reads all incoming frames; if the broker stops
+// sending pings (every 30 s) the read deadline fires and the connection
+// is torn down automatically.
 func Connect(brokerURL, userID string) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -67,15 +83,46 @@ func Connect(brokerURL, userID string) error {
 		return err
 	}
 
+	// Expect a ping at least every 30 s; give a little headroom.
+	_ = c.SetReadDeadline(time.Now().Add(65 * time.Second))
+	c.SetPingHandler(func(data string) error {
+		_ = c.SetReadDeadline(time.Now().Add(65 * time.Second))
+		return c.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(time.Second))
+	})
+
+	ch := make(chan []byte, 16)
 	conn = c
 	session = &Session{UserID: userID, BrokerURL: brokerURL}
+	msgChan = ch
+
+	go readLoop(c, ch)
 	return nil
+}
+
+// readLoop runs in the background, feeding messages into ch and cleaning up
+// when the connection dies (ping timeout, network error, etc.).
+func readLoop(c *websocket.Conn, ch chan []byte) {
+	defer func() {
+		mu.Lock()
+		if conn == c {
+			conn = nil
+			session = nil
+		}
+		mu.Unlock()
+		close(ch)
+	}()
+	for {
+		_, data, err := c.ReadMessage()
+		if err != nil {
+			return
+		}
+		ch <- data
+	}
 }
 
 func Disconnect() {
 	mu.Lock()
 	defer mu.Unlock()
-
 	if conn != nil {
 		conn.Close()
 		conn = nil
@@ -105,18 +152,23 @@ func Send(data []byte) error {
 	return conn.WriteMessage(websocket.TextMessage, data)
 }
 
-// Receive reads one message from the active WebSocket connection.
+// Receive reads one application message from the background reader.
 func Receive(timeout time.Duration) ([]byte, error) {
 	mu.Lock()
-	c := conn
+	ch := msgChan
 	mu.Unlock()
-	if c == nil {
+	if ch == nil {
 		return nil, errors.New("not connected")
 	}
-	_ = c.SetReadDeadline(time.Now().Add(timeout))
-	_, data, err := c.ReadMessage()
-	_ = c.SetReadDeadline(time.Time{})
-	return data, err
+	select {
+	case data, ok := <-ch:
+		if !ok {
+			return nil, errors.New("disconnected")
+		}
+		return data, nil
+	case <-time.After(timeout):
+		return nil, errors.New("receive timeout")
+	}
 }
 
 func BrokerURL() string {

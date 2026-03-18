@@ -8,14 +8,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/jackc/pgx/v5"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-func RunMigrations(conn *pgx.Conn) error {
+func RunMigrations(conn Conn) error {
 	ctx := context.Background()
 
 	// Get the current version; if migration_version doesn't exist yet, start at 0.
@@ -71,7 +69,7 @@ func RunMigrations(conn *pgx.Conn) error {
 	return nil
 }
 
-func applyMigration(ctx context.Context, conn *pgx.Conn, version int, name string) error {
+func applyMigration(ctx context.Context, conn Conn, version int, name string) error {
 	content, err := migrationsFS.ReadFile("migrations/" + name)
 	if err != nil {
 		return fmt.Errorf("reading migration %s: %w", name, err)

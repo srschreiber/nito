@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	dbtypes "github.com/srschreiber/nito/broker/database/types"
 )
 
 // CreateUser inserts a new user with an optional public key used for encrypting room keys.
-func CreateUser(ctx context.Context, conn *pgx.Conn, username string, publicKey *string) (*dbtypes.User, error) {
+func CreateUser(ctx context.Context, conn Conn, username string, publicKey *string) (*dbtypes.User, error) {
 	row := conn.QueryRow(ctx, `
 		INSERT INTO users (username, public_key)
 		VALUES ($1, $2)
@@ -24,7 +23,7 @@ func CreateUser(ctx context.Context, conn *pgx.Conn, username string, publicKey 
 }
 
 // GetUserPublicKey returns the public key for a user, used by callers to encrypt room keys before sending.
-func GetUserPublicKey(ctx context.Context, conn *pgx.Conn, userID string) (*string, error) {
+func GetUserPublicKey(ctx context.Context, conn Conn, userID string) (*string, error) {
 	var publicKey *string
 	err := conn.QueryRow(ctx, `
 		SELECT public_key FROM users WHERE id = $1
@@ -37,7 +36,7 @@ func GetUserPublicKey(ctx context.Context, conn *pgx.Conn, userID string) (*stri
 
 // CreateRoom creates a room, adds the creator as a joined member with the admin role,
 // generates key version 1, and stores the creator's encrypted room key.
-func CreateRoom(ctx context.Context, conn *pgx.Conn, name, creatorUserID, encryptedRoomKey string) (*dbtypes.Room, error) {
+func CreateRoom(ctx context.Context, conn Conn, name, creatorUserID, encryptedRoomKey string) (*dbtypes.Room, error) {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -91,7 +90,7 @@ func CreateRoom(ctx context.Context, conn *pgx.Conn, name, creatorUserID, encryp
 
 // InviteUserToRoom adds a user to a room as a pending member (joined_at = null) with the member role,
 // and stores their encrypted copy of the current room key so they can decrypt messages upon joining.
-func InviteUserToRoom(ctx context.Context, conn *pgx.Conn, roomID, invitedUserID, invitedByUserID, encryptedRoomKey string) (*dbtypes.RoomMember, error) {
+func InviteUserToRoom(ctx context.Context, conn Conn, roomID, invitedUserID, invitedByUserID, encryptedRoomKey string) (*dbtypes.RoomMember, error) {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -140,7 +139,7 @@ func InviteUserToRoom(ctx context.Context, conn *pgx.Conn, roomID, invitedUserID
 
 // CreateRoomKeyVersion inserts a new key version (max + 1) for a room, used when rotating keys.
 // Callers must follow up with InsertUserRoomKey for every active member.
-func CreateRoomKeyVersion(ctx context.Context, conn *pgx.Conn, roomID, generatedByUserID string) (*dbtypes.RoomKeyVersion, error) {
+func CreateRoomKeyVersion(ctx context.Context, conn Conn, roomID, generatedByUserID string) (*dbtypes.RoomKeyVersion, error) {
 	row := conn.QueryRow(ctx, `
 		INSERT INTO room_key_versions (version_num, room_id, generated_by_user_id)
 		SELECT COALESCE(MAX(version_num), 0) + 1, $1, $2
@@ -158,7 +157,7 @@ func CreateRoomKeyVersion(ctx context.Context, conn *pgx.Conn, roomID, generated
 
 // InsertUserRoomKey stores a user's encrypted copy of the latest room key version.
 // The caller is responsible for encrypting the key with the user's public key first.
-func InsertUserRoomKey(ctx context.Context, conn *pgx.Conn, userID, roomID, encryptedRoomKey string) (*dbtypes.UserRoomKey, error) {
+func InsertUserRoomKey(ctx context.Context, conn Conn, userID, roomID, encryptedRoomKey string) (*dbtypes.UserRoomKey, error) {
 	row := conn.QueryRow(ctx, `
 		INSERT INTO user_room_keys (user_id, room_id, room_key_version_num, encrypted_room_key)
 		SELECT $1, $2, MAX(version_num), $3
@@ -175,7 +174,7 @@ func InsertUserRoomKey(ctx context.Context, conn *pgx.Conn, userID, roomID, encr
 }
 
 // GetUserRoomKey returns the user's encrypted room key for the latest key version in the room.
-func GetUserRoomKey(ctx context.Context, conn *pgx.Conn, userID, roomID string) (*dbtypes.UserRoomKey, error) {
+func GetUserRoomKey(ctx context.Context, conn Conn, userID, roomID string) (*dbtypes.UserRoomKey, error) {
 	row := conn.QueryRow(ctx, `
 		SELECT user_id, room_id, room_key_version_num, encrypted_room_key, updated_at, created_at
 		FROM user_room_keys
