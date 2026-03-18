@@ -60,8 +60,8 @@ func (b *Broker) RegisterUser(ctx context.Context, username, publicKey string) (
 	return &types.RegisterResponse{ID: user.ID, Username: user.Username}, nil
 }
 
-// lookupUserID resolves a username to its UUID. Returns "" if not found.
-func (b *Broker) lookupUserID(ctx context.Context, username string) string {
+// LookupUserIDByUsername resolves a username to its UUID. Returns "" if not found.
+func (b *Broker) LookupUserIDByUsername(ctx context.Context, username string) string {
 	var id string
 	_ = b.db.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, username).Scan(&id)
 	return id
@@ -92,7 +92,7 @@ func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	userID := b.lookupUserID(ctx, username)
+	userID := b.LookupUserIDByUsername(ctx, username)
 	if userID == "" {
 		http.Error(w, "user not registered: call POST /api/v0/register first", http.StatusUnauthorized)
 		return

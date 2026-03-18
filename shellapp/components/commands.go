@@ -232,6 +232,12 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 	case commands.SignalExit:
 		_ = history.Save(l.cmdHistory)
 		return tea.Quit
+	case commands.SignalRefreshRooms:
+		return tea.Batch(
+			func() tea.Msg { return AppendHistoryMsg{Entries: entries} },
+			emitConn,
+			func() tea.Msg { return types.RoomsFetchMsg{} },
+		)
 	}
 
 	return tea.Batch(func() tea.Msg { return AppendHistoryMsg{Entries: entries} }, emitConn)

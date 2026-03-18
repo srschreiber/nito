@@ -154,6 +154,30 @@ func echoCmd(args []Argument) (string, error) {
 	return respPayload.Text, nil
 }
 
+func roomCreateCmd(args []Argument) (string, error) {
+	name := strings.Join(extractArgValues(args, "n", "name"), " ")
+	if name == "" {
+		return "", errors.New("room-create: -n/--name <name> is required")
+	}
+
+	roomKey, err := keys.GenerateRoomKey()
+	if err != nil {
+		return "", fmt.Errorf("room-create: %w", err)
+	}
+
+	encryptedKey, err := keys.EncryptRoomKey(roomKey)
+	if err != nil {
+		return "", fmt.Errorf("room-create: %w", err)
+	}
+
+	id, roomName, err := connection.CreateRoom(name, encryptedKey)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("room %q created (id: %s)", roomName, id), nil
+}
+
 func connectCmd(args []Argument) (string, error) {
 	brokerURL := extractArg(args, "b", "broker")
 	if brokerURL == "" {
@@ -238,6 +262,12 @@ func ExecCommand(cmd string) (string, Signal, error) {
 		return out, SignalNone, err
 	case "wcid":
 		return wcid(parsedCommand.Args), SignalNone, nil
+	case "room-create":
+		out, err := roomCreateCmd(parsedCommand.Args)
+		if err != nil {
+			return "", SignalNone, err
+		}
+		return out, SignalRefreshRooms, nil
 	default:
 		return "", SignalNone, errors.New("unknown command: " + parsedCommand.Name)
 	}

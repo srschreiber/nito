@@ -3,7 +3,9 @@ package keys
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -70,4 +72,44 @@ func LoadOrGenerate() (pub string, err error) {
 	cwd, _ := os.Getwd()
 	fmt.Printf("keys saved to %s\n", filepath.Join(cwd, keyDir))
 	return string(pubPEM), nil
+}
+
+// GenerateRoomKey generates a random 32-byte key suitable for AES-256-GCM,
+// which provides authenticated encryption fast enough for real-time use (e.g. VoIP).
+func GenerateRoomKey() ([]byte, error) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("generate room key: %w", err)
+	}
+	return key, nil
+}
+
+// EncryptRoomKey encrypts roomKey with the RSA-2048 public key on disk using
+// OAEP-SHA256, and returns a base64-encoded ciphertext safe to send to the broker.
+func EncryptRoomKey(roomKey []byte) (string, error) {
+	_, pubPath, err := keyPaths()
+	if err != nil {
+		return "", err
+	}
+	pubPEM, err := os.ReadFile(pubPath)
+	if err != nil {
+		return "", fmt.Errorf("read public key: %w", err)
+	}
+	block, _ := pem.Decode(pubPEM)
+	if block == nil {
+		return "", fmt.Errorf("decode public key PEM: no block found")
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("parse public key: %w", err)
+	}
+	rsaPub, ok := pub.(*rsa.PublicKey)
+	if !ok {
+		return "", fmt.Errorf("expected RSA public key")
+	}
+	ct, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPub, roomKey, nil)
+	if err != nil {
+		return "", fmt.Errorf("encrypt room key: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(ct), nil
 }

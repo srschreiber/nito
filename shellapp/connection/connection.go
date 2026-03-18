@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	shelltypes "github.com/srschreiber/nito/shellapp/types"
 )
 
 type Session struct {
@@ -169,6 +170,59 @@ func Receive(timeout time.Duration) ([]byte, error) {
 	case <-time.After(timeout):
 		return nil, errors.New("receive timeout")
 	}
+}
+
+// CreateRoom creates a new room on the broker. Requires an active session.
+// encryptedRoomKey is the base64-encoded RSA-OAEP ciphertext of the room's AES key.
+func CreateRoom(name, encryptedRoomKey string) (id, roomName string, err error) {
+	s := CurrentSession()
+	if s == nil {
+		return "", "", errors.New("not connected")
+	}
+	body, _ := json.Marshal(map[string]string{
+		"name":             name,
+		"userId":           s.UserID,
+		"encryptedRoomKey": encryptedRoomKey,
+	})
+	resp, err := http.Post("http://"+s.BrokerURL+"/api/v0/rooms", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return "", "", fmt.Errorf("create room: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("create room: broker returned %s", resp.Status)
+	}
+	var result struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", fmt.Errorf("create room: decode: %w", err)
+	}
+	return result.ID, result.Name, nil
+}
+
+// ListRooms returns all rooms the current user is a member of.
+func ListRooms() ([]shelltypes.RoomEntry, error) {
+	s := CurrentSession()
+	if s == nil {
+		return nil, errors.New("not connected")
+	}
+	resp, err := http.Get("http://" + s.BrokerURL + "/api/v0/rooms/list?user_id=" + s.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("list rooms: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list rooms: broker returned %s", resp.Status)
+	}
+	var result struct {
+		Rooms []shelltypes.RoomEntry `json:"rooms"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("list rooms: decode: %w", err)
+	}
+	return result.Rooms, nil
 }
 
 func BrokerURL() string {

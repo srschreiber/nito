@@ -12,28 +12,29 @@ import (
 )
 
 // Box overhead constants (lipgloss borders + padding).
-// History/Status: RoundedBorder (all 4 sides) + Padding(0,1) → 4 wide, 2 tall.
+// History/Rooms/Status: RoundedBorder (all 4 sides) + Padding(0,1) → 4 wide, 2 tall.
 // Command: ThickBorder (left only) + Padding(0,1) → 3 wide, 0 tall.
 // AppStyle: Padding(1,2) → 4 wide, 2 tall.
 const (
-	histBoxOverheadW = 4
-	histBoxOverheadH = 2
-	statBoxOverheadW = 4
-	cmdBoxOverheadW  = 3
-	appPaddingW      = 4
+	histBoxOverheadW  = 4
+	histBoxOverheadH  = 2
+	rightBoxOverheadW = 4
+	cmdBoxOverheadW   = 3
+	appPaddingW       = 4
 )
 
 // layout holds computed content dimensions for each component.
 type layout struct {
-	histW, histH int
-	statW        int
-	cmdW         int
+	histW, histH  int
+	rightW        int // shared content width for rooms and status
+	roomsH, statH int
+	cmdW          int
 }
 
 // computeLayout derives component content dimensions from the terminal size.
-// History box is 60% of terminal width and 80% of terminal height (visual box
-// including borders). Status takes the remaining top-row width. Command spans
-// the full usable width.
+// History takes 60% of terminal width and 80% of height. The right column
+// (rooms on top, status below) takes the remainder. Rooms gets 65% of the
+// right column height, status 35%. Command spans the full usable width.
 func computeLayout(termW, termH int) layout {
 	if termW < 30 {
 		termW = 30
@@ -50,8 +51,14 @@ func computeLayout(termW, termH int) layout {
 	histW := histBoxW - histBoxOverheadW
 	histH := histBoxH - histBoxOverheadH
 
-	statBoxW := usableW - histBoxW
-	statW := statBoxW - statBoxOverheadW
+	rightBoxW := usableW - histBoxW
+	rightW := rightBoxW - rightBoxOverheadW
+
+	// Split the right column: rooms 65%, status 35%.
+	roomsBoxH := int(float64(histBoxH) * 0.65)
+	statBoxH := histBoxH - roomsBoxH
+	roomsH := roomsBoxH - histBoxOverheadH
+	statH := statBoxH - histBoxOverheadH
 
 	cmdW := usableW - cmdBoxOverheadW
 
@@ -61,18 +68,25 @@ func computeLayout(termW, termH int) layout {
 	if histH < 3 {
 		histH = 3
 	}
-	if statW < 5 {
-		statW = 5
+	if rightW < 5 {
+		rightW = 5
+	}
+	if roomsH < 2 {
+		roomsH = 2
+	}
+	if statH < 2 {
+		statH = 2
 	}
 	if cmdW < 10 {
 		cmdW = 10
 	}
 
-	return layout{histW: histW, histH: histH, statW: statW, cmdW: cmdW}
+	return layout{histW: histW, histH: histH, rightW: rightW, roomsH: roomsH, statH: statH, cmdW: cmdW}
 }
 
 type model struct {
 	history *components.ConversationHistory
+	rooms   *components.RoomsComponent
 	status  *components.StatusComponent
 	command *components.CommandComponent
 	comps   []components.Component
@@ -84,17 +98,19 @@ type model struct {
 func initialModel() model {
 	l := computeLayout(120, 40) // reasonable default until WindowSizeMsg arrives
 	history := components.NewConversationHistory(l.histW, l.histH)
-	status := components.NewStatusComponent(l.statW, l.histH)
+	rooms := components.NewRoomsComponent(l.rightW, l.roomsH)
+	status := components.NewStatusComponent(l.rightW, l.statH)
 	command := components.NewCommandComponent(l.cmdW)
 
-	// comps: 0=history, 1=status (display-only), 2=command
+	// comps: 0=history, 1=rooms, 2=status (display-only), 3=command
 	m := model{
 		history:          history,
+		rooms:            rooms,
 		status:           status,
 		command:          command,
-		comps:            []components.Component{history, status, command},
-		focusable:        []int{0, 2},
-		focusedComponent: 1, // index into focusable → comps[2] = command
+		comps:            []components.Component{history, rooms, status, command},
+		focusable:        []int{0, 1, 3},
+		focusedComponent: 2, // index into focusable → comps[3] = command
 	}
 	m.comps[m.focusable[m.focusedComponent]].SetFocused(true)
 	return m
@@ -103,7 +119,8 @@ func initialModel() model {
 func (m *model) relayout(termW, termH int) {
 	l := computeLayout(termW, termH)
 	m.history.SetSize(l.histW, l.histH)
-	m.status.SetSize(l.statW, l.histH)
+	m.rooms.SetSize(l.rightW, l.roomsH)
+	m.status.SetSize(l.rightW, l.statH)
 	m.command.SetWidth(l.cmdW, l.histW)
 }
 
@@ -148,10 +165,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
-	topRow := lipgloss.JoinHorizontal(lipgloss.Top,
-		m.history.Render(),
-		m.status.Render(),
-	)
+	rightCol := lipgloss.JoinVertical(lipgloss.Left, m.rooms.Render(), m.status.Render())
+	topRow := lipgloss.JoinHorizontal(lipgloss.Top, m.history.Render(), rightCol)
 	s := topRow + "\n" + m.command.Render()
 
 	footerText := ""

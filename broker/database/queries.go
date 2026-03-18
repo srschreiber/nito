@@ -173,6 +173,38 @@ func InsertUserRoomKey(ctx context.Context, conn Conn, userID, roomID, encrypted
 	return &key, nil
 }
 
+// UserRoomRow is a lightweight projection used when listing rooms for a user.
+type UserRoomRow struct {
+	RoomID   string
+	RoomName string
+	IsOwner  bool
+}
+
+// ListUserRooms returns all rooms the user has joined, along with whether they are the owner.
+func ListUserRooms(ctx context.Context, conn Conn, userID string) ([]UserRoomRow, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT r.id, r.name, (r.created_by_user_id = $1) AS is_owner
+		FROM rooms r
+		JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = $1
+		WHERE rm.joined_at IS NOT NULL
+		ORDER BY r.created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list user rooms: %w", err)
+	}
+	defer rows.Close()
+
+	var result []UserRoomRow
+	for rows.Next() {
+		var row UserRoomRow
+		if err := rows.Scan(&row.RoomID, &row.RoomName, &row.IsOwner); err != nil {
+			return nil, fmt.Errorf("scan room row: %w", err)
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
 // GetUserRoomKey returns the user's encrypted room key for the latest key version in the room.
 func GetUserRoomKey(ctx context.Context, conn Conn, userID, roomID string) (*dbtypes.UserRoomKey, error) {
 	row := conn.QueryRow(ctx, `

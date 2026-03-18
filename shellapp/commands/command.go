@@ -8,9 +8,10 @@ import (
 type Signal int
 
 const (
-	SignalNone  Signal = 0
-	SignalExit  Signal = 1
-	SignalClear Signal = 2
+	SignalNone         Signal = 0
+	SignalExit         Signal = 1
+	SignalClear        Signal = 2
+	SignalRefreshRooms Signal = 3
 )
 
 type ArgDef struct {
@@ -44,6 +45,9 @@ var Registry = []CommandDef{
 	}},
 	{Name: "wcid", Desc: "describe all commands and their arguments", Args: []ArgDef{
 		{Short: "c", Long: "command", Desc: "show details for a specific command"},
+	}},
+	{Name: "room-create", Desc: "create a new room; generates an AES-256 room key and encrypts it with your public key", Args: []ArgDef{
+		{Short: "n", Long: "name", Desc: "room name"},
 	}},
 }
 
