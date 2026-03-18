@@ -26,6 +26,7 @@ type RegisterResponse struct {
 
 var (
 	mu      sync.Mutex
+	wmu     sync.Mutex // serializes all writes to conn
 	conn    *websocket.Conn
 	session *Session
 	msgChan chan []byte
@@ -63,9 +64,7 @@ func Register(brokerURL, username, publicKey string) (*RegisterResponse, error) 
 }
 
 // Connect establishes a persistent WebSocket connection to the broker.
-// A background goroutine reads all incoming frames; if the broker stops
-// sending pings (every 30 s) the read deadline fires and the connection
-// is torn down automatically.
+// A background goroutine reads all incoming frames and cleans up on error.
 func Connect(brokerURL, userID string) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -83,10 +82,9 @@ func Connect(brokerURL, userID string) error {
 		return err
 	}
 
-	// Expect a ping at least every 30 s; give a little headroom.
-	_ = c.SetReadDeadline(time.Now().Add(65 * time.Second))
 	c.SetPingHandler(func(data string) error {
-		_ = c.SetReadDeadline(time.Now().Add(65 * time.Second))
+		wmu.Lock()
+		defer wmu.Unlock()
 		return c.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(time.Second))
 	})
 
@@ -149,6 +147,8 @@ func Send(data []byte) error {
 	if conn == nil {
 		return errors.New("not connected")
 	}
+	wmu.Lock()
+	defer wmu.Unlock()
 	return conn.WriteMessage(websocket.TextMessage, data)
 }
 
