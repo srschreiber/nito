@@ -105,6 +105,15 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 		l.cursorVisible = !l.cursorVisible
 		return l.newBlinkCmd()
 
+	case tea.PasteMsg:
+		text := msg.Content
+		if text != "" {
+			runes := []rune(l.textFieldValue)
+			l.textFieldValue = string(runes[:l.cursorPos]) + text + string(runes[l.cursorPos:])
+			l.cursorPos += len([]rune(text))
+			return l.resetCursor()
+		}
+
 	case tea.KeyPressMsg:
 		// Every key interaction resets the cursor to visible.
 		blink := l.resetCursor()
