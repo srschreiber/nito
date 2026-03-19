@@ -8,6 +8,6 @@ type WebsocketMessage struct {
 	UserID    string          `json:"userId" validate:"required"`
 	Nonce     string          `json:"nonce" validate:"required"`
 	Timestamp int64           `json:"timestamp" validate:"required"`
-	HMAC      string          `json:"hmac,omitempty" validate:"required"`
+	Signature string          `json:"signature" validate:"required"`
 	Payload   json.RawMessage `json:"payload" validate:"required"`
 }

@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/srschreiber/nito/shellapp/keys"
 	shelltypes "github.com/srschreiber/nito/shellapp/types"
 )
 
 type Session struct {
-	UserID    string
+	UserID    string // username (used as the identity token sent to the broker)
 	BrokerURL string
 }
 
@@ -172,6 +173,38 @@ func Receive(timeout time.Duration) ([]byte, error) {
 	}
 }
 
+// signedPost builds a POST request with X-Username and X-Signature headers.
+// apiPath is the bare path (e.g. "/api/v0/rooms") used as the signature payload.
+func signedPost(url, username, apiPath string, body []byte) (*http.Response, error) {
+	sig, err := keys.Sign(username + ":" + apiPath)
+	if err != nil {
+		return nil, fmt.Errorf("sign request: %w", err)
+	}
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Username", username)
+	req.Header.Set("X-Signature", sig)
+	return http.DefaultClient.Do(req)
+}
+
+// signedGet builds a GET request with X-Username and X-Signature headers.
+func signedGet(url, username, apiPath string) (*http.Response, error) {
+	sig, err := keys.Sign(username + ":" + apiPath)
+	if err != nil {
+		return nil, fmt.Errorf("sign request: %w", err)
+	}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Username", username)
+	req.Header.Set("X-Signature", sig)
+	return http.DefaultClient.Do(req)
+}
+
 // CreateRoom creates a new room on the broker. Requires an active session.
 // encryptedRoomKey is the base64-encoded RSA-OAEP ciphertext of the room's AES key.
 func CreateRoom(name, encryptedRoomKey string) (id, roomName string, err error) {
@@ -184,7 +217,7 @@ func CreateRoom(name, encryptedRoomKey string) (id, roomName string, err error) 
 		"userId":           s.UserID,
 		"encryptedRoomKey": encryptedRoomKey,
 	})
-	resp, err := http.Post("http://"+s.BrokerURL+"/api/v0/rooms", "application/json", bytes.NewReader(body))
+	resp, err := signedPost("http://"+s.BrokerURL+"/api/v0/rooms", s.UserID, "/api/v0/rooms", body)
 	if err != nil {
 		return "", "", fmt.Errorf("create room: %w", err)
 	}
@@ -208,7 +241,11 @@ func ListRooms() ([]shelltypes.RoomEntry, error) {
 	if s == nil {
 		return nil, errors.New("not connected")
 	}
-	resp, err := http.Get("http://" + s.BrokerURL + "/api/v0/rooms/list?user_id=" + s.UserID)
+	resp, err := signedGet(
+		"http://"+s.BrokerURL+"/api/v0/rooms/list?user_id="+s.UserID,
+		s.UserID,
+		"/api/v0/rooms/list",
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list rooms: %w", err)
 	}

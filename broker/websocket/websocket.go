@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -10,13 +11,15 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/srschreiber/nito/broker/auth"
 	"github.com/srschreiber/nito/broker/database"
 	dbtypes "github.com/srschreiber/nito/broker/database/types"
 	"github.com/srschreiber/nito/broker/types"
 )
 
 type Session struct {
-	UserID string
+	UserID   string
+	Username string
 }
 
 type Client struct {
@@ -110,7 +113,7 @@ func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.R
 	})
 
 	client := &Client{
-		Session:    Session{UserID: userID},
+		Session:    Session{UserID: userID, Username: username},
 		connection: conn,
 		send:       make(chan []byte, 32),
 	}
@@ -178,6 +181,10 @@ func (b *Broker) readLoop(ctx context.Context, client *Client) error {
 				log.Printf("invalid message from %s: %v", client.Session.UserID, err)
 				continue
 			}
+			if err := b.verifyRPCSignature(client, msg); err != nil {
+				log.Printf("signature error from %s: rpc=%s: %v", client.Session.UserID, msg.RPCName, err)
+				continue
+			}
 			log.Printf("message from %s: rpc=%s requestId=%s", client.Session.UserID, msg.RPCName, msg.RequestID)
 			b.handleRPC(client, msg)
 		}
@@ -191,6 +198,15 @@ func (b *Broker) handleRPC(client *Client, msg types.WebsocketMessage) {
 	default:
 		log.Printf("unknown RPC %q from %s", msg.RPCName, client.Session.UserID)
 	}
+}
+
+func (b *Broker) verifyRPCSignature(client *Client, msg types.WebsocketMessage) error {
+	pubKey, err := database.GetUserPublicKeyByUsername(context.Background(), b.db, client.Session.Username)
+	if err != nil || pubKey == nil {
+		return fmt.Errorf("public key not found for user %s", client.Session.Username)
+	}
+	signed := client.Session.Username + ":" + msg.RPCName
+	return auth.VerifySignature(*pubKey, signed, msg.Signature)
 }
 
 func (b *Broker) handleEcho(client *Client, msg types.WebsocketMessage) {

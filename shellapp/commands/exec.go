@@ -119,12 +119,17 @@ func echoCmd(args []Argument) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("echo: %w", err)
 	}
+	sig, err := keys.Sign(s.UserID + ":echo")
+	if err != nil {
+		return "", fmt.Errorf("echo: sign: %w", err)
+	}
 	msg := brokertypes.WebsocketMessage{
 		RPCName:   "echo",
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    s.UserID,
 		Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),
 		Timestamp: time.Now().Unix(),
+		Signature: sig,
 		Payload:   payload,
 	}
 	data, err := json.Marshal(msg)

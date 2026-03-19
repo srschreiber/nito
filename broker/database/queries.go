@@ -34,6 +34,18 @@ func GetUserPublicKey(ctx context.Context, conn Conn, userID string) (*string, e
 	return publicKey, nil
 }
 
+// GetUserPublicKeyByUsername returns the public key for a user looked up by username.
+func GetUserPublicKeyByUsername(ctx context.Context, conn Conn, username string) (*string, error) {
+	var publicKey *string
+	err := conn.QueryRow(ctx, `
+		SELECT public_key FROM users WHERE username = $1
+	`, username).Scan(&publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("get user public key by username: %w", err)
+	}
+	return publicKey, nil
+}
+
 // CreateRoom creates a room, adds the creator as a joined member with the admin role,
 // generates key version 1, and stores the creator's encrypted room key.
 func CreateRoom(ctx context.Context, conn Conn, name, creatorUserID, encryptedRoomKey string) (*dbtypes.Room, error) {

@@ -1,6 +1,7 @@
 package keys
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -72,6 +73,37 @@ func LoadOrGenerate() (pub string, err error) {
 	cwd, _ := os.Getwd()
 	fmt.Printf("keys saved to %s\n", filepath.Join(cwd, keyDir))
 	return string(pubPEM), nil
+}
+
+// Sign signs message with the local RSA private key using PSS-SHA256 and returns
+// the base64-encoded signature. Used to authenticate API and RPC requests.
+func Sign(message string) (string, error) {
+	privPath, _, err := keyPaths()
+	if err != nil {
+		return "", err
+	}
+	privPEM, err := os.ReadFile(privPath)
+	if err != nil {
+		return "", fmt.Errorf("read private key: %w", err)
+	}
+	block, _ := pem.Decode(privPEM)
+	if block == nil {
+		return "", fmt.Errorf("decode private key PEM: no block found")
+	}
+	privKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("parse private key: %w", err)
+	}
+	rsaKey, ok := privKey.(*rsa.PrivateKey)
+	if !ok {
+		return "", fmt.Errorf("expected RSA private key")
+	}
+	h := sha256.Sum256([]byte(message))
+	sig, err := rsa.SignPSS(rand.Reader, rsaKey, crypto.SHA256, h[:], nil)
+	if err != nil {
+		return "", fmt.Errorf("sign: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(sig), nil
 }
 
 // GenerateRoomKey generates a random 32-byte key suitable for AES-256-GCM,

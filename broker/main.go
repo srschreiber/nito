@@ -8,6 +8,8 @@ import (
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/srschreiber/nito/broker/auth"
 	"github.com/srschreiber/nito/broker/database"
 	"github.com/srschreiber/nito/broker/types"
 	brokerws "github.com/srschreiber/nito/broker/websocket"
@@ -17,6 +19,29 @@ var configPath = flag.String("config", "broker/config.yml", "path to config file
 var migrateOnly = flag.Bool("migrate-only", false, "run migrations and exit")
 
 var validate = validator.New(validator.WithRequiredStructEnabled())
+
+// withSignature validates the X-Username and X-Signature headers on a request.
+// The expected signed payload is "username:path" (e.g. "alice:/api/v0/rooms").
+func withSignature(db *pgxpool.Pool, handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		username := r.Header.Get("X-Username")
+		sigB64 := r.Header.Get("X-Signature")
+		if username == "" || sigB64 == "" {
+			http.Error(w, "missing signature headers", http.StatusUnauthorized)
+			return
+		}
+		pubKey, err := database.GetUserPublicKeyByUsername(r.Context(), db, username)
+		if err != nil || pubKey == nil {
+			http.Error(w, "user not found", http.StatusUnauthorized)
+			return
+		}
+		if err := auth.VerifySignature(*pubKey, username+":"+r.URL.Path, sigB64); err != nil {
+			http.Error(w, "invalid signature", http.StatusUnauthorized)
+			return
+		}
+		handler(w, r)
+	}
+}
 
 func withValidation[Req any](handler func(w http.ResponseWriter, r *http.Request, req Req)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +101,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
-	http.HandleFunc("/api/v0/rooms", withValidation(func(w http.ResponseWriter, r *http.Request, req types.CreateRoomRequest) {
+	http.HandleFunc("/api/v0/rooms", withSignature(pool, withValidation(func(w http.ResponseWriter, r *http.Request, req types.CreateRoomRequest) {
 		userID := broker.LookupUserIDByUsername(r.Context(), req.UserID)
 		if userID == "" {
 			http.Error(w, "user not found", http.StatusNotFound)
@@ -89,8 +114,8 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
-	}))
-	http.HandleFunc("/api/v0/rooms/list", func(w http.ResponseWriter, r *http.Request) {
+	})))
+	http.HandleFunc("/api/v0/rooms/list", withSignature(pool, func(w http.ResponseWriter, r *http.Request) {
 		username := r.URL.Query().Get("user_id")
 		if username == "" {
 			http.Error(w, "missing user_id", http.StatusBadRequest)
@@ -108,7 +133,7 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(types.ListRoomsResponse{Rooms: rooms})
-	})
+	}))
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		broker.WsConnect(ctx, w, r)
 	})
