@@ -1,0 +1,10 @@
+broker:
+  addr: localhost:7070
+
+db:
+  user: postgres
+  password: ""
+  host: localhost
+  port: "5432"
+  name: nito
+  url: "" # if set, overrides all other fields

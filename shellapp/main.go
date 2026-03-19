@@ -44,9 +44,10 @@ func computeLayout(termW, termH int) layout {
 	}
 
 	usableW := termW - appPaddingW
-
-	histBoxW := int(float64(termW) * 0.6)
-	histBoxH := int(float64(termH) * 0.8)
+	pHistBoxW := .2
+	pHistBoxH := .9
+	histBoxW := int(float64(termW) * pHistBoxW)
+	histBoxH := int(float64(termH) * pHistBoxH)
 
 	histW := histBoxW - histBoxOverheadW
 	histH := histBoxH - histBoxOverheadH
@@ -55,10 +56,10 @@ func computeLayout(termW, termH int) layout {
 	rightW := rightBoxW - rightBoxOverheadW
 
 	// Split the right column: rooms 65%, status 35%.
-	roomsBoxH := int(float64(histBoxH) * 0.65)
+	roomsBoxH := int(float64(histBoxH) * 0.85)
 	statBoxH := histBoxH - roomsBoxH
 	roomsH := roomsBoxH - histBoxOverheadH
-	statH := statBoxH - histBoxOverheadH
+	statH := statBoxH
 
 	cmdW := usableW - cmdBoxOverheadW
 

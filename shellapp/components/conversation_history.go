@@ -90,7 +90,7 @@ func (h *ConversationHistory) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (h *ConversationHistory) Render() string {
-	render := styles.SectionTitleStyle.Render("Conversation") + "\n"
+	render := styles.SectionTitleStyle.Render("Commands") + "\n"
 
 	if len(h.entries) == 0 {
 		render += styles.Grey.Render("No messages yet.")

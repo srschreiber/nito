@@ -1,6 +1,7 @@
 package components
 
 import (
+	"fmt"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -8,16 +9,18 @@ import (
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
+	"github.com/srschreiber/nito/utils"
 )
 
 type roomsPollMsg struct{}
 
 type RoomsComponent struct {
-	rooms   []types.RoomEntry
-	cursor  int
-	focused bool
-	width   int
-	height  int
+	rooms    []types.RoomEntry
+	selected *string
+	cursor   int
+	focused  bool
+	width    int
+	height   int
 }
 
 func NewRoomsComponent(width, height int) *RoomsComponent {
@@ -78,6 +81,12 @@ func (r *RoomsComponent) Update(msg tea.Msg) tea.Cmd {
 			if r.cursor < len(r.rooms)-1 {
 				r.cursor++
 			}
+		case "enter":
+			if len(r.rooms) > 0 {
+				room := r.rooms[r.cursor]
+				selected := room.ID
+				r.selected = &selected
+			}
 		}
 	}
 	return nil
@@ -96,6 +105,10 @@ func (r *RoomsComponent) Render() string {
 				name += " " + styles.Grey.Render("(owner)")
 			}
 			cursor := "  "
+			if room.ID == utils.DerefOrZero(r.selected) {
+				checked := styles.SelectedStyle.Render("✓")
+				name = fmt.Sprintf("%s (%s)", name, checked)
+			}
 			if i == r.cursor {
 				cursor = styles.CursorStyle.Render("› ")
 			}

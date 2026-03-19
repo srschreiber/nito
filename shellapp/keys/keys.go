@@ -20,6 +20,10 @@ func keyPaths() (privPath, pubPath string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("get working dir: %w", err)
 	}
+	// if shellapp not at end of path, append it (e.g. if user runs from project root instead of shellapp/)
+	if filepath.Base(cwd) != "shellapp" {
+		cwd = filepath.Join(cwd, "shellapp")
+	}
 	dir := filepath.Join(cwd, keyDir)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", "", fmt.Errorf("create key dir: %w", err)
