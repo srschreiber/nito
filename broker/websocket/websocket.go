@@ -122,11 +122,6 @@ func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	})
-
 	client := &Client{
 		Session:    Session{UserID: userID, Username: username},
 		connection: conn,
@@ -150,18 +145,10 @@ func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.R
 }
 
 func (b *Broker) writeLoop(ctx context.Context, client *Client) {
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-pingTicker.C:
-			if err := client.connection.WriteMessage(websocket.PingMessage, nil); err != nil {
-				_ = client.connection.Close()
-				return
-			}
 		case msg, ok := <-client.send:
 			if !ok {
 				_ = client.connection.Close()
@@ -172,6 +159,72 @@ func (b *Broker) writeLoop(ctx context.Context, client *Client) {
 				return
 			}
 		}
+	}
+}
+
+// PingConnect handles the /ws/ping endpoint: a dedicated keepalive connection.
+// It just runs ping/pong with a read deadline and no message processing.
+func (b *Broker) PingConnect(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("user_id")
+	if username == "" {
+		http.Error(w, "missing user_id", http.StatusUnauthorized)
+		return
+	}
+	if b.LookupUserIDByUsername(ctx, username) == "" {
+		http.Error(w, "user not registered", http.StatusUnauthorized)
+		return
+	}
+	sigB64 := r.Header.Get("X-Signature")
+	if sigB64 == "" {
+		http.Error(w, "missing X-Signature header", http.StatusUnauthorized)
+		return
+	}
+	pubKey, err := database.GetUserPublicKeyByUsername(ctx, b.db, username)
+	if err != nil || pubKey == nil {
+		http.Error(w, "user has no public key", http.StatusUnauthorized)
+		return
+	}
+	if err := auth.VerifySignature(*pubKey, username+":/ws/ping", sigB64); err != nil {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
+
+	conn, err := b.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("ping upgrade error:", err)
+		return
+	}
+	defer conn.Close()
+
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	})
+
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				conn.Close()
+				return
+			case <-pingTicker.C:
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					conn.Close()
+					return
+				}
+			}
+		}
+	}()
+
+	// Drain frames so pong handler fires; expect no real messages.
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			return
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	}
 }
 
