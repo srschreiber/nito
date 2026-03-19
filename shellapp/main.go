@@ -234,6 +234,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						waitIncoming(),
 					)
 				}
+			case "members_updated":
+				return m, tea.Batch(
+					func() tea.Msg { return types.MembersUpdatedMsg{} },
+					waitIncoming(),
+				)
 			}
 		}
 		return m, waitIncoming()

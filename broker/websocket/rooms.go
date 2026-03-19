@@ -60,6 +60,42 @@ func (b *Broker) BrokerInviteUser(ctx context.Context, roomID, invitedByUserID, 
 	return &types.InviteUserResponse{RoomID: member.RoomID, UserID: member.UserID}, nil
 }
 
+// notifyMembersUpdated fans out a "members_updated" RPC to every connected co-member of userID.
+// Called when a user goes online or offline so room member lists can be refreshed.
+func (b *Broker) notifyMembersUpdated(userID string) {
+	coMembers, err := database.GetCoMemberUserIDs(context.Background(), b.db, userID)
+	if err != nil {
+		log.Printf("notifyMembersUpdated: query co-members for %s: %v", userID, err)
+		return
+	}
+	msg := types.WebsocketMessage{
+		RPCName:   "members_updated",
+		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
+		UserID:    userID,
+		Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),
+		Timestamp: time.Now().Unix(),
+		Payload:   []byte("{}"),
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("notifyMembersUpdated: marshal: %v", err)
+		return
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, coID := range coMembers {
+		client := b.clientMap[coID]
+		if client == nil {
+			continue
+		}
+		select {
+		case client.send <- data:
+		default:
+			log.Printf("notifyMembersUpdated: send channel full for user %s", coID)
+		}
+	}
+}
+
 // sendNotification pushes a notification message to a connected user. No-op if user is offline.
 func (b *Broker) sendNotification(userID, text string) {
 	b.mu.RLock()

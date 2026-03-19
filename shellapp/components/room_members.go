@@ -66,6 +66,8 @@ func (m *RoomMembersComponent) Update(msg tea.Msg) tea.Cmd {
 	case types.RoomMembersFetchMsg:
 		m.roomID = &msg.RoomID
 		return m.fetch()
+	case types.MembersUpdatedMsg:
+		return m.fetch()
 	case types.RoomMembersUpdatedMsg:
 		m.members = msg.Members
 	}

@@ -139,6 +139,7 @@ func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.R
 		return
 	}
 	log.Println("client connected:", userID)
+	go b.notifyMembersUpdated(userID)
 
 	go b.writeLoop(ctx, client)
 
@@ -147,6 +148,7 @@ func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.R
 	}
 
 	b.removeClient(client)
+	go b.notifyMembersUpdated(userID)
 }
 
 func (b *Broker) writeLoop(ctx context.Context, client *Client) {

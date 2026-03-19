@@ -34,6 +34,33 @@ func GetUserPublicKey(ctx context.Context, conn Conn, userID string) (*string, e
 	return publicKey, nil
 }
 
+// GetCoMemberUserIDs returns UUIDs of all joined members (excluding userID) who share
+// at least one joined room with userID. Used to fan out presence change notifications.
+func GetCoMemberUserIDs(ctx context.Context, conn Conn, userID string) ([]string, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT DISTINCT rm2.user_id
+		FROM room_members rm1
+		JOIN room_members rm2 ON rm1.room_id = rm2.room_id
+		WHERE rm1.user_id      = $1
+		  AND rm1.joined_at IS NOT NULL
+		  AND rm2.joined_at IS NOT NULL
+		  AND rm2.user_id     != $1
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get co-member user ids: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan co-member user id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // GetUserPublicKeyByUsername returns the public key for a user looked up by username.
 func GetUserPublicKeyByUsername(ctx context.Context, conn Conn, username string) (*string, error) {
 	var publicKey *string
