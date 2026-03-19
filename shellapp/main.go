@@ -213,6 +213,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.relayout(msg.Width, msg.Height)
 		return m, nil
+	case types.ConnectedMsg:
+		return m, tea.Batch(waitNotification(), waitIncoming())
 	case notificationMsg:
 		text := string(msg)
 		return m, tea.Batch(

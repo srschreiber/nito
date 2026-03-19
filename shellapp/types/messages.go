@@ -6,3 +6,6 @@ type ConnectionStatusMsg struct {
 	BrokerURL string
 	UserID    string
 }
+
+// ConnectedMsg is sent once after a successful connect, to re-arm WS listeners.
+type ConnectedMsg struct{}

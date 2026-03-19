@@ -247,6 +247,12 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 			emitConn,
 			func() tea.Msg { return types.RoomsFetchMsg{} },
 		)
+	case commands.SignalConnected:
+		return tea.Batch(
+			func() tea.Msg { return AppendHistoryMsg{Entries: entries} },
+			emitConn,
+			func() tea.Msg { return types.ConnectedMsg{} },
+		)
 	case commands.SignalRoomSelected:
 		roomID := connection.GetCurrentRoomID()
 		if roomID == nil {

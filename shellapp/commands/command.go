@@ -13,6 +13,7 @@ const (
 	SignalClear        Signal = 2
 	SignalRefreshRooms Signal = 3
 	SignalRoomSelected Signal = 4
+	SignalConnected    Signal = 5
 )
 
 type ArgDef struct {

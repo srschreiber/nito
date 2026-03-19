@@ -352,7 +352,10 @@ func ExecCommand(cmd string) (string, Signal, error) {
 		return out, SignalNone, err
 	case "connect":
 		out, err := connectCmd(parsedCommand.Args)
-		return out, SignalNone, err
+		if err != nil {
+			return out, SignalNone, err
+		}
+		return out, SignalConnected, nil
 	case "ping":
 		out, err := ping(parsedCommand.Args)
 		return out, SignalNone, err

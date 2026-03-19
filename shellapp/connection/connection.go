@@ -31,7 +31,6 @@ var (
 	mu           sync.Mutex
 	wmu          sync.Mutex // serializes all writes to conn
 	conn         *websocket.Conn
-	pingConn     *websocket.Conn // dedicated keepalive connection
 	session      *Session
 	incomingChan chan []byte // non-notification WS messages routed to the TUI model
 	notifChan    chan string // server-push notification text
@@ -68,7 +67,7 @@ func Register(brokerURL, username, publicKey string) (*RegisterResponse, error) 
 	return &result, nil
 }
 
-// Connect establishes a command WebSocket and a dedicated ping WebSocket to the broker.
+// Connect establishes a persistent WebSocket connection to the broker.
 func Connect(brokerURL, userID string) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -76,68 +75,37 @@ func Connect(brokerURL, userID string) error {
 	if conn != nil {
 		conn.Close()
 		conn = nil
+		session = nil
 	}
-	if pingConn != nil {
-		pingConn.Close()
-		pingConn = nil
-	}
-	session = nil
 
 	brokerURL = normalizeURL(brokerURL)
-	dialer := &websocket.Dialer{HandshakeTimeout: 5 * time.Second}
-
-	// Command connection.
-	cmdSig, err := keys.Sign(userID + ":/ws")
+	sig, err := keys.Sign(userID + ":/ws")
 	if err != nil {
 		return fmt.Errorf("sign handshake: %w", err)
 	}
-	cmdHeaders := http.Header{}
-	cmdHeaders.Set("X-Username", userID)
-	cmdHeaders.Set("X-Signature", cmdSig)
-	c, _, err := dialer.Dial("ws://"+brokerURL+"/ws?user_id="+userID, cmdHeaders)
+	headers := http.Header{}
+	headers.Set("X-Username", userID)
+	headers.Set("X-Signature", sig)
+	dialer := &websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	c, _, err := dialer.Dial("ws://"+brokerURL+"/ws?user_id="+userID, headers)
 	if err != nil {
 		return err
 	}
 
-	// Ping connection — its own websocket.Conn so writes never share wmu.
-	pingSig, err := keys.Sign(userID + ":/ws/ping")
-	if err != nil {
-		c.Close()
-		return fmt.Errorf("sign ping handshake: %w", err)
-	}
-	pingHeaders := http.Header{}
-	pingHeaders.Set("X-Username", userID)
-	pingHeaders.Set("X-Signature", pingSig)
-	pc, _, err := dialer.Dial("ws://"+brokerURL+"/ws/ping?user_id="+userID, pingHeaders)
-	if err != nil {
-		c.Close()
-		return err
-	}
+	// WriteControl is safe to call concurrently with WriteMessage, so no wmu needed.
+	c.SetPingHandler(func(data string) error {
+		return c.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(5*time.Second))
+	})
 
 	ic := make(chan []byte, 16)
 	nc := make(chan string, 16)
 	conn = c
-	pingConn = pc
 	session = &Session{UserID: userID, BrokerURL: brokerURL}
 	incomingChan = ic
 	notifChan = nc
 
 	go readLoop(c, ic, nc)
-	go pingLoop(pc)
 	return nil
-}
-
-// pingLoop keeps the ping connection alive by answering server pings.
-func pingLoop(pc *websocket.Conn) {
-	defer pc.Close()
-	pc.SetPingHandler(func(data string) error {
-		return pc.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(time.Second))
-	})
-	for {
-		if _, _, err := pc.ReadMessage(); err != nil {
-			return
-		}
-	}
 }
 
 // readLoop runs in the background, routing messages:
@@ -196,10 +164,6 @@ func Disconnect() {
 	if conn != nil {
 		conn.Close()
 		conn = nil
-	}
-	if pingConn != nil {
-		pingConn.Close()
-		pingConn = nil
 	}
 	session = nil
 }

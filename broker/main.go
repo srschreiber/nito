@@ -232,9 +232,6 @@ func main() {
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		broker.WsConnect(ctx, w, r)
 	})
-	http.HandleFunc("/ws/ping", func(w http.ResponseWriter, r *http.Request) {
-		broker.PingConnect(ctx, w, r)
-	})
 
 	log.Printf("broker listening on %s", cfg.Broker.Addr)
 	log.Fatal(http.ListenAndServe(cfg.Broker.Addr, nil))
