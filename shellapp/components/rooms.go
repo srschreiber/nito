@@ -71,6 +71,8 @@ func (r *RoomsComponent) Update(msg tea.Msg) tea.Cmd {
 		if r.cursor >= len(r.rooms) {
 			r.cursor = 0
 		}
+	case types.RoomSelectedMsg:
+		r.selected = &msg.RoomID
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "up", "k":
@@ -86,6 +88,8 @@ func (r *RoomsComponent) Update(msg tea.Msg) tea.Cmd {
 				room := r.rooms[r.cursor]
 				selected := room.ID
 				r.selected = &selected
+				connection.SetCurrentRoom(room.ID)
+				return func() tea.Msg { return types.RoomSelectedMsg{RoomID: room.ID} }
 			}
 		}
 	}

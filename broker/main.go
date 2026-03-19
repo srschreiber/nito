@@ -134,6 +134,101 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(types.ListRoomsResponse{Rooms: rooms})
 	}))
+	http.HandleFunc("/api/v0/rooms/invite", withSignature(pool, withValidation(func(w http.ResponseWriter, r *http.Request, req types.InviteUserRequest) {
+		username := r.Header.Get("X-Username")
+		inviterID := broker.LookupUserIDByUsername(r.Context(), username)
+		if inviterID == "" {
+			http.Error(w, "inviter not found", http.StatusNotFound)
+			return
+		}
+		resp, err := broker.BrokerInviteUser(r.Context(), req.RoomID, inviterID, req.InvitedUsername, req.EncryptedRoomKey)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})))
+	http.HandleFunc("/api/v0/rooms/members", withSignature(pool, func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.URL.Query().Get("room_id")
+		if roomID == "" {
+			http.Error(w, "missing room_id", http.StatusBadRequest)
+			return
+		}
+		members, err := broker.BrokerListRoomMembers(r.Context(), roomID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(types.ListRoomMembersResponse{Members: members})
+	}))
+	http.HandleFunc("/api/v0/rooms/key", withSignature(pool, func(w http.ResponseWriter, r *http.Request) {
+		username := r.Header.Get("X-Username")
+		userID := broker.LookupUserIDByUsername(r.Context(), username)
+		if userID == "" {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		roomID := r.URL.Query().Get("room_id")
+		if roomID == "" {
+			http.Error(w, "missing room_id", http.StatusBadRequest)
+			return
+		}
+		key, err := broker.BrokerGetRoomKey(r.Context(), userID, roomID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(types.GetRoomKeyResponse{EncryptedRoomKey: key})
+	}))
+	http.HandleFunc("/api/v0/rooms/invites", withSignature(pool, func(w http.ResponseWriter, r *http.Request) {
+		username := r.URL.Query().Get("user_id")
+		if username == "" {
+			http.Error(w, "missing user_id", http.StatusBadRequest)
+			return
+		}
+		userID := broker.LookupUserIDByUsername(r.Context(), username)
+		if userID == "" {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		invites, err := broker.BrokerListPendingInvites(r.Context(), userID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(types.ListPendingInvitesResponse{Invites: invites})
+	}))
+	http.HandleFunc("/api/v0/rooms/invites/accept", withSignature(pool, withValidation(func(w http.ResponseWriter, r *http.Request, req types.AcceptInviteRequest) {
+		username := r.Header.Get("X-Username")
+		userID := broker.LookupUserIDByUsername(r.Context(), username)
+		if userID == "" {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		if err := broker.BrokerAcceptInvite(r.Context(), userID, req.RoomID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})))
+	http.HandleFunc("/api/v0/users/public-key", func(w http.ResponseWriter, r *http.Request) {
+		username := r.URL.Query().Get("username")
+		if username == "" {
+			http.Error(w, "missing username", http.StatusBadRequest)
+			return
+		}
+		pub, err := broker.BrokerGetUserPublicKey(r.Context(), username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(types.GetUserPublicKeyResponse{PublicKey: pub})
+	})
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		broker.WsConnect(ctx, w, r)
 	})

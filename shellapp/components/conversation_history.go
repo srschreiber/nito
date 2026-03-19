@@ -21,6 +21,11 @@ type AppendHistoryMsg struct {
 // ClearHistoryMsg is emitted by CommandComponent when history should be cleared.
 type ClearHistoryMsg struct{}
 
+// NewResponseAppendMsg builds an AppendHistoryMsg for a single server-response line.
+func NewResponseAppendMsg(text string) AppendHistoryMsg {
+	return AppendHistoryMsg{Entries: []historyEntry{{text: text, isResponse: true}}}
+}
+
 type ConversationHistory struct {
 	entries []historyEntry
 	scroll  int

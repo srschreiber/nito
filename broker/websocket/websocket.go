@@ -101,6 +101,21 @@ func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.R
 		return
 	}
 
+	sigB64 := r.Header.Get("X-Signature")
+	if sigB64 == "" {
+		http.Error(w, "missing X-Signature header", http.StatusUnauthorized)
+		return
+	}
+	pubKey, err := database.GetUserPublicKeyByUsername(ctx, b.db, username)
+	if err != nil || pubKey == nil {
+		http.Error(w, "user has no public key", http.StatusUnauthorized)
+		return
+	}
+	if err := auth.VerifySignature(*pubKey, username+":/ws", sigB64); err != nil {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := b.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("upgrade error:", err)

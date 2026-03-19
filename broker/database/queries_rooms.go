@@ -7,45 +7,6 @@ import (
 	dbtypes "github.com/srschreiber/nito/broker/database/types"
 )
 
-// CreateUser inserts a new user with an optional public key used for encrypting room keys.
-func CreateUser(ctx context.Context, conn Conn, username string, publicKey *string) (*dbtypes.User, error) {
-	row := conn.QueryRow(ctx, `
-		INSERT INTO users (username, public_key)
-		VALUES ($1, $2)
-		RETURNING id, username, public_key, updated_at, created_at
-	`, username, publicKey)
-
-	user, err := ScanRow[dbtypes.User](row)
-	if err != nil {
-		return nil, fmt.Errorf("create user: %w", err)
-	}
-	return &user, nil
-}
-
-// GetUserPublicKey returns the public key for a user, used by callers to encrypt room keys before sending.
-func GetUserPublicKey(ctx context.Context, conn Conn, userID string) (*string, error) {
-	var publicKey *string
-	err := conn.QueryRow(ctx, `
-		SELECT public_key FROM users WHERE id = $1
-	`, userID).Scan(&publicKey)
-	if err != nil {
-		return nil, fmt.Errorf("get user public key: %w", err)
-	}
-	return publicKey, nil
-}
-
-// GetUserPublicKeyByUsername returns the public key for a user looked up by username.
-func GetUserPublicKeyByUsername(ctx context.Context, conn Conn, username string) (*string, error) {
-	var publicKey *string
-	err := conn.QueryRow(ctx, `
-		SELECT public_key FROM users WHERE username = $1
-	`, username).Scan(&publicKey)
-	if err != nil {
-		return nil, fmt.Errorf("get user public key by username: %w", err)
-	}
-	return publicKey, nil
-}
-
 // CreateRoom creates a room, adds the creator as a joined member with the admin role,
 // generates key version 1, and stores the creator's encrypted room key.
 func CreateRoom(ctx context.Context, conn Conn, name, creatorUserID, encryptedRoomKey string) (*dbtypes.Room, error) {
@@ -149,42 +110,6 @@ func InviteUserToRoom(ctx context.Context, conn Conn, roomID, invitedUserID, inv
 	return &member, nil
 }
 
-// CreateRoomKeyVersion inserts a new key version (max + 1) for a room, used when rotating keys.
-// Callers must follow up with InsertUserRoomKey for every active member.
-func CreateRoomKeyVersion(ctx context.Context, conn Conn, roomID, generatedByUserID string) (*dbtypes.RoomKeyVersion, error) {
-	row := conn.QueryRow(ctx, `
-		INSERT INTO room_key_versions (version_num, room_id, generated_by_user_id)
-		SELECT COALESCE(MAX(version_num), 0) + 1, $1, $2
-		FROM room_key_versions
-		WHERE room_id = $1
-		RETURNING version_num, room_id, generated_by_user_id, updated_at, created_at
-	`, roomID, generatedByUserID)
-
-	kv, err := ScanRow[dbtypes.RoomKeyVersion](row)
-	if err != nil {
-		return nil, fmt.Errorf("create room key version: %w", err)
-	}
-	return &kv, nil
-}
-
-// InsertUserRoomKey stores a user's encrypted copy of the latest room key version.
-// The caller is responsible for encrypting the key with the user's public key first.
-func InsertUserRoomKey(ctx context.Context, conn Conn, userID, roomID, encryptedRoomKey string) (*dbtypes.UserRoomKey, error) {
-	row := conn.QueryRow(ctx, `
-		INSERT INTO user_room_keys (user_id, room_id, room_key_version_num, encrypted_room_key)
-		SELECT $1, $2, MAX(version_num), $3
-		FROM room_key_versions
-		WHERE room_id = $2
-		RETURNING user_id, room_id, room_key_version_num, encrypted_room_key, updated_at, created_at
-	`, userID, roomID, encryptedRoomKey)
-
-	key, err := ScanRow[dbtypes.UserRoomKey](row)
-	if err != nil {
-		return nil, fmt.Errorf("insert user room key: %w", err)
-	}
-	return &key, nil
-}
-
 // UserRoomRow is a lightweight projection used when listing rooms for a user.
 type UserRoomRow struct {
 	RoomID   string
@@ -217,19 +142,99 @@ func ListUserRooms(ctx context.Context, conn Conn, userID string) ([]UserRoomRow
 	return result, rows.Err()
 }
 
-// GetUserRoomKey returns the user's encrypted room key for the latest key version in the room.
-func GetUserRoomKey(ctx context.Context, conn Conn, userID, roomID string) (*dbtypes.UserRoomKey, error) {
-	row := conn.QueryRow(ctx, `
-		SELECT user_id, room_id, room_key_version_num, encrypted_room_key, updated_at, created_at
-		FROM user_room_keys
-		WHERE user_id = $1 AND room_id = $2
-		ORDER BY room_key_version_num DESC
-		LIMIT 1
-	`, userID, roomID)
+// PendingInviteRow holds room info for invites the user hasn't accepted yet.
+type PendingInviteRow struct {
+	RoomID   string
+	RoomName string
+}
 
-	key, err := ScanRow[dbtypes.UserRoomKey](row)
+// ListPendingInvites returns all rooms where the user has been invited but not yet joined.
+func ListPendingInvites(ctx context.Context, conn Conn, userID string) ([]PendingInviteRow, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT rm.room_id, r.name
+		FROM room_members rm
+		JOIN rooms r ON r.id = rm.room_id
+		WHERE rm.user_id = $1 AND rm.joined_at IS NULL
+		ORDER BY rm.created_at ASC
+	`, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get user room key: %w", err)
+		return nil, fmt.Errorf("list pending invites: %w", err)
 	}
-	return &key, nil
+	defer rows.Close()
+
+	var result []PendingInviteRow
+	for rows.Next() {
+		var row PendingInviteRow
+		if err := rows.Scan(&row.RoomID, &row.RoomName); err != nil {
+			return nil, fmt.Errorf("scan pending invite: %w", err)
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+// AcceptRoomInvite sets joined_at = now() for a pending room_members row.
+func AcceptRoomInvite(ctx context.Context, conn Conn, userID, roomID string) error {
+	_, err := conn.Exec(ctx, `
+		UPDATE room_members SET joined_at = now(), updated_at = now()
+		WHERE user_id = $1 AND room_id = $2 AND joined_at IS NULL
+	`, userID, roomID)
+	if err != nil {
+		return fmt.Errorf("accept room invite: %w", err)
+	}
+	return nil
+}
+
+// RoomMemberRow holds a joined member's user ID and username.
+type RoomMemberRow struct {
+	UserID   string
+	Username string
+}
+
+// ListRoomMembersWithUsernames returns joined members of a room with their usernames.
+func ListRoomMembersWithUsernames(ctx context.Context, conn Conn, roomID string) ([]RoomMemberRow, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT rm.user_id, u.username
+		FROM room_members rm
+		JOIN users u ON u.id = rm.user_id
+		WHERE rm.room_id = $1 AND rm.joined_at IS NOT NULL
+		ORDER BY rm.joined_at ASC, rm.created_at ASC
+	`, roomID)
+	if err != nil {
+		return nil, fmt.Errorf("list room members: %w", err)
+	}
+	defer rows.Close()
+
+	var result []RoomMemberRow
+	for rows.Next() {
+		var row RoomMemberRow
+		if err := rows.Scan(&row.UserID, &row.Username); err != nil {
+			return nil, fmt.Errorf("scan room member: %w", err)
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func ListRoomMembers(ctx context.Context, conn Conn, roomID string) ([]dbtypes.RoomMember, error) {
+	rows, err := conn.Query(ctx, `
+	SELECT room_id, user_id, invited_by_user_id, joined_at, updated_at, created_at
+	FROM room_members
+	WHERE room_id = $1 AND joined_at IS NOT NULL
+	ORDER BY joined_at ASC, created_at ASC
+	`, roomID)
+	if err != nil {
+		return nil, fmt.Errorf("list room members: %w", err)
+	}
+	defer rows.Close()
+
+	var members []dbtypes.RoomMember
+	for rows.Next() {
+		var m dbtypes.RoomMember
+		if err := rows.Scan(&m.RoomID, &m.UserID, &m.InvitedByUserID, &m.JoinedAt, &m.UpdatedAt, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan room member: %w", err)
+		}
+		members = append(members, m)
+	}
+	return members, rows.Err()
 }

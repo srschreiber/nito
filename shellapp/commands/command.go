@@ -12,6 +12,7 @@ const (
 	SignalExit         Signal = 1
 	SignalClear        Signal = 2
 	SignalRefreshRooms Signal = 3
+	SignalRoomSelected Signal = 4
 )
 
 type ArgDef struct {
@@ -48,6 +49,17 @@ var Registry = []CommandDef{
 	}},
 	{Name: "room-create", Desc: "create a new room; generates an AES-256 room key and encrypts it with your public key", Args: []ArgDef{
 		{Short: "n", Long: "name", Desc: "room name"},
+	}},
+	{Name: "room-list", Desc: "list all rooms you have joined"},
+	{Name: "room-select", Desc: "select a room by name or ID (sets the active room for invite and members)", Args: []ArgDef{
+		{Short: "r", Long: "room", Desc: "room name or ID prefix"},
+	}},
+	{Name: "room-invite", Desc: "invite a user to the currently selected room", Args: []ArgDef{
+		{Short: "u", Long: "user", Desc: "username to invite"},
+	}},
+	{Name: "room-invites", Desc: "list pending room invitations sent to you"},
+	{Name: "room-accept", Desc: "accept a pending room invitation", Args: []ArgDef{
+		{Short: "r", Long: "room", Desc: "room ID to accept"},
 	}},
 }
 

@@ -31,6 +31,16 @@ func keyPaths() (privPath, pubPath string, err error) {
 	return filepath.Join(dir, "private_key.pem"), filepath.Join(dir, "public_key.pem"), nil
 }
 
+// HaveKeys returns true if a local key pair exists (i.e. the user has registered).
+func HaveKeys() bool {
+	privPath, _, err := keyPaths()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(privPath)
+	return err == nil
+}
+
 // LoadOrGenerate loads the RSA-2048 key pair from .nito/ in the working directory,
 // generating and saving them if they don't exist yet.
 // Returns the public key as a PEM string ready to send to the broker.
@@ -108,6 +118,60 @@ func Sign(message string) (string, error) {
 		return "", fmt.Errorf("sign: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(sig), nil
+}
+
+// DecryptRoomKey decrypts a base64-encoded RSA-OAEP ciphertext using the local private key.
+func DecryptRoomKey(encryptedKeyB64 string) ([]byte, error) {
+	privPath, _, err := keyPaths()
+	if err != nil {
+		return nil, err
+	}
+	privPEM, err := os.ReadFile(privPath)
+	if err != nil {
+		return nil, fmt.Errorf("read private key: %w", err)
+	}
+	block, _ := pem.Decode(privPEM)
+	if block == nil {
+		return nil, fmt.Errorf("decode private key PEM: no block found")
+	}
+	privKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse private key: %w", err)
+	}
+	rsaKey, ok := privKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("expected RSA private key")
+	}
+	ct, err := base64.StdEncoding.DecodeString(encryptedKeyB64)
+	if err != nil {
+		return nil, fmt.Errorf("decode ciphertext: %w", err)
+	}
+	roomKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, rsaKey, ct, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt room key: %w", err)
+	}
+	return roomKey, nil
+}
+
+// EncryptRoomKeyForPEM encrypts roomKey with the given RSA public key PEM using OAEP-SHA256.
+func EncryptRoomKeyForPEM(roomKey []byte, publicKeyPEM string) (string, error) {
+	block, _ := pem.Decode([]byte(publicKeyPEM))
+	if block == nil {
+		return "", fmt.Errorf("decode public key PEM: no block found")
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("parse public key: %w", err)
+	}
+	rsaPub, ok := pub.(*rsa.PublicKey)
+	if !ok {
+		return "", fmt.Errorf("expected RSA public key")
+	}
+	ct, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPub, roomKey, nil)
+	if err != nil {
+		return "", fmt.Errorf("encrypt room key: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(ct), nil
 }
 
 // GenerateRoomKey generates a random 32-byte key suitable for AES-256-GCM,

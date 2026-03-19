@@ -11,6 +11,7 @@ import (
 	brokertypes "github.com/srschreiber/nito/broker/types"
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/keys"
+	"github.com/srschreiber/nito/utils"
 )
 
 func wcid(args []Argument) string {
@@ -136,27 +137,11 @@ func echoCmd(args []Argument) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("echo: %w", err)
 	}
-
 	if err := connection.Send(data); err != nil {
 		return "", fmt.Errorf("echo: send: %w", err)
 	}
-
-	resp, err := connection.Receive(5 * time.Second)
-	if err != nil {
-		return "", fmt.Errorf("echo: receive: %w", err)
-	}
-
-	var respMsg brokertypes.WebsocketMessage
-	if err := json.Unmarshal(resp, &respMsg); err != nil {
-		return "", fmt.Errorf("echo: bad response: %w", err)
-	}
-
-	var respPayload brokertypes.EchoPayload
-	if err := json.Unmarshal(respMsg.Payload, &respPayload); err != nil {
-		return "", fmt.Errorf("echo: bad payload: %w", err)
-	}
-
-	return respPayload.Text, nil
+	// Response arrives asynchronously via the readLoop → incomingChan → TUI model.
+	return "", nil
 }
 
 func roomCreateCmd(args []Argument) (string, error) {
@@ -183,6 +168,109 @@ func roomCreateCmd(args []Argument) (string, error) {
 	return fmt.Sprintf("room %q created (id: %s)", roomName, id), nil
 }
 
+func roomListCmd() (string, error) {
+	rooms, err := connection.ListRooms()
+	if err != nil {
+		return "", err
+	}
+	if len(rooms) == 0 {
+		return "no rooms", nil
+	}
+	var lines []string
+	for _, r := range rooms {
+		owner := ""
+		if r.IsOwner {
+			owner = " (owner)"
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s%s", r.ID, r.Name, owner))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func roomSelectCmd(args []Argument) (string, Signal, error) {
+	query := extractArg(args, "r", "room")
+	if query == "" {
+		return "", SignalNone, errors.New("room-select: -r/--room <name or id> is required")
+	}
+	rooms, err := connection.ListRooms()
+	if err != nil {
+		return "", SignalNone, err
+	}
+	var matched []string
+	for _, r := range rooms {
+		if r.ID == query || strings.HasPrefix(r.ID, query) || strings.EqualFold(r.Name, query) {
+			matched = append(matched, r.ID)
+		}
+	}
+	if len(matched) == 0 {
+		return "", SignalNone, fmt.Errorf("room-select: no room matching %q", query)
+	}
+	if len(matched) > 1 {
+		return "", SignalNone, fmt.Errorf("room-select: ambiguous: %d rooms match %q", len(matched), query)
+	}
+	connection.SetCurrentRoom(matched[0])
+	return fmt.Sprintf("selected room %s", matched[0]), SignalRoomSelected, nil
+}
+
+func roomInviteCmd(args []Argument) (string, error) {
+	username := extractArg(args, "u", "user")
+	if username == "" {
+		return "", errors.New("room-invite: -u/--user <username> is required")
+	}
+	roomID := utils.DerefOrZero(connection.GetCurrentRoomID())
+	if roomID == "" {
+		return "", errors.New("room-invite: no room selected (use room-select or select in UI)")
+	}
+
+	// Fetch our own encrypted room key, decrypt it, then re-encrypt for the invitee.
+	encryptedKey, err := connection.GetMyRoomKey(roomID)
+	if err != nil {
+		return "", fmt.Errorf("room-invite: fetch room key: %w", err)
+	}
+	roomKey, err := keys.DecryptRoomKey(encryptedKey)
+	if err != nil {
+		return "", fmt.Errorf("room-invite: decrypt room key: %w", err)
+	}
+	inviteePub, err := connection.GetUserPublicKey(username)
+	if err != nil {
+		return "", fmt.Errorf("room-invite: get invitee public key: %w", err)
+	}
+	encryptedForInvitee, err := keys.EncryptRoomKeyForPEM(roomKey, inviteePub)
+	if err != nil {
+		return "", fmt.Errorf("room-invite: encrypt for invitee: %w", err)
+	}
+	if err := connection.InviteUser(roomID, username, encryptedForInvitee); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("invited %s to room %s", username, roomID), nil
+}
+
+func roomInvitesCmd() (string, error) {
+	invites, err := connection.ListPendingInvites()
+	if err != nil {
+		return "", err
+	}
+	if len(invites) == 0 {
+		return "no pending invites", nil
+	}
+	var lines []string
+	for _, inv := range invites {
+		lines = append(lines, fmt.Sprintf("%s  %s", inv.RoomID, inv.RoomName))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func roomAcceptCmd(args []Argument) (string, error) {
+	roomID := extractArg(args, "r", "room")
+	if roomID == "" {
+		return "", errors.New("room-accept: -r/--room <room_id> is required")
+	}
+	if err := connection.AcceptInvite(roomID); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("joined room %s", roomID), nil
+}
+
 func connectCmd(args []Argument) (string, error) {
 	brokerURL := extractArg(args, "b", "broker")
 	if brokerURL == "" {
@@ -191,6 +279,9 @@ func connectCmd(args []Argument) (string, error) {
 	userID := extractArg(args, "u", "user")
 	if userID == "" {
 		return "", errors.New("connect: -u/--user <id> is required")
+	}
+	if !keys.HaveKeys() {
+		return "", errors.New("connect: no keys found — run register first")
 	}
 
 	if err := connection.Connect(brokerURL, userID); err != nil {
@@ -269,6 +360,23 @@ func ExecCommand(cmd string) (string, Signal, error) {
 		return wcid(parsedCommand.Args), SignalNone, nil
 	case "room-create":
 		out, err := roomCreateCmd(parsedCommand.Args)
+		if err != nil {
+			return "", SignalNone, err
+		}
+		return out, SignalRefreshRooms, nil
+	case "room-list":
+		out, err := roomListCmd()
+		return out, SignalNone, err
+	case "room-select":
+		return roomSelectCmd(parsedCommand.Args)
+	case "room-invite":
+		out, err := roomInviteCmd(parsedCommand.Args)
+		return out, SignalNone, err
+	case "room-invites":
+		out, err := roomInvitesCmd()
+		return out, SignalNone, err
+	case "room-accept":
+		out, err := roomAcceptCmd(parsedCommand.Args)
 		if err != nil {
 			return "", SignalNone, err
 		}
