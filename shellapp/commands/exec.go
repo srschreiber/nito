@@ -124,7 +124,7 @@ func echoCmd(args []Argument) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("echo: sign: %w", err)
 	}
-	msg := wstypes.IncomingWebsocketMessage{
+	msg := wstypes.ToBrokerWsMessage{
 		RPCName:   "echo",
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    s.UserID,
@@ -271,6 +271,51 @@ func roomAcceptCmd(args []Argument) (string, error) {
 	return fmt.Sprintf("joined room %s", roomID), nil
 }
 
+func sayCmd(args []Argument) (string, error) {
+	s := connection.CurrentSession()
+	if s == nil {
+		return "", errors.New("say: not connected (use connect first)")
+	}
+	roomID := utils.DerefOrZero(connection.GetCurrentRoomID())
+	if roomID == "" {
+		return "", errors.New("say: no room selected (use room-select first)")
+	}
+	text := strings.Join(extractArgValues(args, "m", "message"), " ")
+	if text == "" {
+		return "", errors.New("say: -m/--message <text> is required")
+	}
+
+	payload, err := json.Marshal(wstypes.RoomMessagePayload{
+		RoomID:        roomID,
+		FromUserID:    s.UserID,
+		EncryptedText: text,
+	})
+	if err != nil {
+		return "", fmt.Errorf("say: %w", err)
+	}
+	sig, err := keys.Sign(s.UserID + ":room_message")
+	if err != nil {
+		return "", fmt.Errorf("say: sign: %w", err)
+	}
+	msg := wstypes.ToBrokerWsMessage{
+		RPCName:   "room_message",
+		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
+		UserID:    s.UserID,
+		Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),
+		Timestamp: time.Now().Unix(),
+		Signature: sig,
+		Payload:   payload,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return "", fmt.Errorf("say: %w", err)
+	}
+	if err := connection.Send(data); err != nil {
+		return "", fmt.Errorf("say: send: %w", err)
+	}
+	return "", nil
+}
+
 func connectCmd(args []Argument) (string, error) {
 	brokerURL := extractArg(args, "b", "broker")
 	if brokerURL == "" {
@@ -384,6 +429,9 @@ func ExecCommand(cmd string) (string, Signal, error) {
 			return "", SignalNone, err
 		}
 		return out, SignalRefreshRooms, nil
+	case "say":
+		out, err := sayCmd(parsedCommand.Args)
+		return out, SignalNone, err
 	default:
 		return "", SignalNone, errors.New("unknown command: " + parsedCommand.Name)
 	}

@@ -24,13 +24,13 @@ type Session struct {
 }
 
 var (
-	mu           sync.Mutex
-	wmu          sync.Mutex // serializes all writes to conn
-	conn         *websocket.Conn
-	session      *Session
-	incomingChan chan []byte // non-notification WS messages routed to the TUI model
-	notifChan    chan []byte // server-push notification text
-	echoChan     chan []byte // echo messages from the server (for testing connectivity)
+	mu              sync.Mutex
+	wmu             sync.Mutex // serializes all writes to conn
+	conn            *websocket.Conn
+	session         *Session
+	notifChan       chan []byte // server-push notification text
+	echoChan        chan []byte // echo messages from the server (for testing connectivity)
+	roomMessageChan chan []byte // incoming room messages (raw JSON for the TUI model to dispatch
 )
 
 func normalizeURL(url string) string {
@@ -94,22 +94,21 @@ func Connect(brokerURL, userID string) error {
 		return c.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(5*time.Second))
 	})
 
-	ic := make(chan []byte, 16)
+	roomMessageChan = make(chan []byte, 16)
 	nc := make(chan []byte, 16)
 	echoChan = make(chan []byte, 16)
 	conn = c
 	session = &Session{UserID: userID, BrokerURL: brokerURL}
-	incomingChan = ic
 	notifChan = nc
 
-	go readLoop(c, ic, echoChan, nc)
+	go readLoop(c, roomMessageChan, echoChan, nc)
 	return nil
 }
 
 // readLoop runs in the background, routing messages:
 //   - "notification" RPCs → nc (notification text)
 //   - everything else → ic (raw JSON for the TUI model to dispatch)
-func readLoop(c *websocket.Conn, ic, echoChan, nc chan []byte) {
+func readLoop(c *websocket.Conn, echoChan, roomMessageChan, nc chan []byte) {
 	defer func() {
 		mu.Lock()
 		if conn == c {
@@ -117,7 +116,7 @@ func readLoop(c *websocket.Conn, ic, echoChan, nc chan []byte) {
 			session = nil
 		}
 		mu.Unlock()
-		close(ic)
+		close(roomMessageChan)
 		close(nc)
 	}()
 	for {
@@ -125,7 +124,7 @@ func readLoop(c *websocket.Conn, ic, echoChan, nc chan []byte) {
 		if err != nil {
 			return
 		}
-		var message wstypes.OutgoingWebsocketMessage
+		var message wstypes.ToClientWsMessage
 		if json.Unmarshal(data, &message) != nil {
 			log.Println("unmarshal WS message:", err)
 			continue
@@ -138,7 +137,7 @@ func readLoop(c *websocket.Conn, ic, echoChan, nc chan []byte) {
 				log.Println("unmarshal notification payload:", err)
 				continue
 			}
-			ic <- message.Payload
+			nc <- message.Payload
 			continue
 		case "echo":
 			var echoPayload wstypes.EchoPayload
@@ -154,7 +153,7 @@ func readLoop(c *websocket.Conn, ic, echoChan, nc chan []byte) {
 				log.Printf("Message from %s in room %s: %s", roomMessagePayload.FromUserID, roomMessagePayload.RoomID, roomMessagePayload.EncryptedText)
 				continue
 			}
-			ic <- message.Payload
+			roomMessageChan <- message.Payload
 			continue
 		}
 	}
@@ -202,18 +201,16 @@ func Send(data []byte) error {
 	return conn.WriteMessage(websocket.TextMessage, data)
 }
 
-// IncomingChan returns the channel that receives all non-notification WS messages.
-// The TUI model uses this via a tea.Cmd to dispatch responses asynchronously.
-func IncomingChan() <-chan []byte {
-	mu.Lock()
-	defer mu.Unlock()
-	return incomingChan
-}
-
 func EchoChan() <-chan []byte {
 	mu.Lock()
 	defer mu.Unlock()
 	return echoChan
+}
+
+func RoomMessageChan() <-chan []byte {
+	mu.Lock()
+	defer mu.Unlock()
+	return roomMessageChan
 }
 
 // signedPost builds a POST request with X-Username and X-Signature headers.

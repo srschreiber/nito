@@ -161,10 +161,8 @@ func (m *model) relayout(termW, termH int) {
 // notificationMsg is delivered to the model when the readLoop routes a
 // server-push notification from the broker.
 type notificationMsg wstypes.NotificationPayload
-
-// // incomingWsMsg carries raw bytes of a non-notification WS message.
-// type incomingWsMsg []byte
 type echoWsMsg wstypes.EchoPayload
+type roomMessageWsMsg wstypes.RoomMessagePayload
 
 // waitNotification blocks on the notification channel the readLoop feeds and
 // returns the text as a notificationMsg. The model re-arms this after each hit.
@@ -187,6 +185,27 @@ func waitNotification() tea.Cmd {
 			return notificationMsg{}
 		}
 		return notificationMsg(payload)
+	}
+}
+
+func waitRoomMessages() tea.Cmd {
+	return func() tea.Msg {
+		ch := connection.RoomMessageChan()
+		if ch == nil {
+			return nil
+		}
+		data, ok := <-ch
+		if !ok {
+			return nil
+		}
+
+		var payload wstypes.RoomMessagePayload
+		if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			fmt.Printf("waitRoomMessages: unmarshal payload: %v\n", err)
+			// to rearm
+			return roomMessageWsMsg{}
+		}
+		return roomMessageWsMsg(payload)
 	}
 }
 
@@ -218,7 +237,7 @@ func (m model) Init() tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	}
-	cmds = append(cmds, waitNotification(), waitEcho())
+	cmds = append(cmds, waitNotification(), waitEcho(), waitRoomMessages())
 	return tea.Batch(cmds...)
 }
 
@@ -228,7 +247,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.relayout(msg.Width, msg.Height)
 		return m, nil
 	case types.ConnectedMsg:
-		return m, tea.Batch(waitNotification(), waitEcho())
+		return m, tea.Batch(waitNotification(), waitEcho(), waitRoomMessages())
 	case notificationMsg:
 		return m, tea.Batch(
 			func() tea.Msg { return components.NewResponseAppendMsg("notification: " + msg.Text) },
@@ -241,6 +260,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			func() tea.Msg { return components.NewResponseAppendMsg("echo response: " + text) },
 			waitEcho(),
 		)
+	case roomMessageWsMsg:
+		var cmds []tea.Cmd
+		cmds = append(cmds, waitRoomMessages())
+		if m.selectedRoomID != nil && msg.RoomID == *m.selectedRoomID {
+			text := fmt.Sprintf("[%s]: %s", msg.FromUserID, msg.EncryptedText)
+			cmds = append(cmds, func() tea.Msg { return components.NewResponseAppendMsg(text) })
+		}
+		return m, tea.Batch(cmds...)
 	case types.RoomSelectedMsg:
 		roomID := msg.RoomID
 		m.selectedRoomID = &roomID

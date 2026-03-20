@@ -200,7 +200,7 @@ func (b *Broker) readLoop(ctx context.Context, client *Client) error {
 
 		switch messageType {
 		case websocket.TextMessage:
-			var msg wstypes.IncomingWebsocketMessage
+			var msg wstypes.ToBrokerWsMessage
 			if err := json.Unmarshal(data, &msg); err != nil {
 				log.Printf("invalid message from %s: %v", client.Session.UserID, err)
 				continue
@@ -215,7 +215,7 @@ func (b *Broker) readLoop(ctx context.Context, client *Client) error {
 	}
 }
 
-func (b *Broker) handleRPC(client *Client, msg wstypes.IncomingWebsocketMessage) {
+func (b *Broker) handleRPC(client *Client, msg wstypes.ToBrokerWsMessage) {
 	switch msg.RPCName {
 	case "echo":
 		b.handleEcho(client, msg)
@@ -229,7 +229,7 @@ func (b *Broker) handleRPC(client *Client, msg wstypes.IncomingWebsocketMessage)
 	}
 }
 
-func (b *Broker) verifyRPCSignature(client *Client, msg wstypes.IncomingWebsocketMessage) error {
+func (b *Broker) verifyRPCSignature(client *Client, msg wstypes.ToBrokerWsMessage) error {
 	pubKey, err := database.GetUserPublicKeyByUsername(context.Background(), b.db, client.Session.Username)
 	if err != nil || pubKey == nil {
 		return fmt.Errorf("public key not found for user %s", client.Session.Username)
@@ -238,7 +238,7 @@ func (b *Broker) verifyRPCSignature(client *Client, msg wstypes.IncomingWebsocke
 	return auth.VerifySignature(*pubKey, signed, msg.Signature)
 }
 
-func (b *Broker) handleEcho(client *Client, msg wstypes.IncomingWebsocketMessage) {
+func (b *Broker) handleEcho(client *Client, msg wstypes.ToBrokerWsMessage) {
 	var payload wstypes.EchoPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 		log.Printf("echo: bad payload from %s: %v", client.Session.UserID, err)
@@ -257,7 +257,7 @@ func (b *Broker) handleEcho(client *Client, msg wstypes.IncomingWebsocketMessage
 		return
 	}
 
-	response := wstypes.OutgoingWebsocketMessage{
+	response := wstypes.ToClientWsMessage{
 		RPCName:   "echo",
 		RequestID: msg.RequestID,
 		UserID:    client.Session.UserID,

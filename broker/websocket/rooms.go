@@ -69,7 +69,7 @@ func (b *Broker) notifyMembersUpdated(userID string) {
 		log.Printf("notifyMembersUpdated: query co-members for %s: %v", userID, err)
 		return
 	}
-	msg := wstypes.IncomingWebsocketMessage{
+	msg := wstypes.ToClientWsMessage{
 		RPCName:   "members_updated",
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    userID,
@@ -97,7 +97,7 @@ func (b *Broker) notifyMembersUpdated(userID string) {
 	}
 }
 
-func (b *Broker) sendRoomMessage(client *Client, message wstypes.IncomingWebsocketMessage) error {
+func (b *Broker) sendRoomMessage(client *Client, message wstypes.ToBrokerWsMessage) error {
 	var payload wstypes.RoomMessagePayload
 	if err := json.Unmarshal(message.Payload, &payload); err != nil {
 		return fmt.Errorf("unmarshal room_message payload: %w", err)
@@ -123,7 +123,7 @@ func (b *Broker) sendRoomMessage(client *Client, message wstypes.IncomingWebsock
 			continue
 		}
 
-		msg := wstypes.OutgoingWebsocketMessage{
+		msg := wstypes.ToClientWsMessage{
 			RPCName:   "room_message",
 			RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 			UserID:    member.UserID,
@@ -158,7 +158,7 @@ func (b *Broker) sendNotification(userID, text string) {
 		log.Printf("notification: marshal payload: %v", err)
 		return
 	}
-	msg := wstypes.IncomingWebsocketMessage{
+	msg := wstypes.ToClientWsMessage{
 		RPCName:   "notification",
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    userID,

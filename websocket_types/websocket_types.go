@@ -2,7 +2,7 @@ package websocket_types
 
 import "encoding/json"
 
-type IncomingWebsocketMessage struct {
+type ToBrokerWsMessage struct {
 	RPCName   string          `json:"rpcName" validate:"required"`
 	RequestID string          `json:"requestId,omitempty" validate:"required"`
 	UserID    string          `json:"userId" validate:"required"`
@@ -12,7 +12,7 @@ type IncomingWebsocketMessage struct {
 	Payload   json.RawMessage `json:"payload" validate:"required"`
 }
 
-type OutgoingWebsocketMessage struct {
+type ToClientWsMessage struct {
 	RPCName   string          `json:"rpcName" validate:"required"`
 	RequestID string          `json:"requestId,omitempty" validate:"required"`
 	UserID    string          `json:"userId" validate:"required"`

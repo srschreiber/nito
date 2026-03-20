@@ -62,6 +62,9 @@ var Registry = []CommandDef{
 	{Name: "room-accept", Desc: "accept a pending room invitation", Args: []ArgDef{
 		{Short: "r", Long: "room", Desc: "room ID to accept"},
 	}},
+	{Name: "say", Desc: "send a message to the currently selected room", Args: []ArgDef{
+		{Short: "m", Long: "message", Desc: "message text to send"},
+	}},
 }
 
 var CommandNames = func() map[string]interface{} {
