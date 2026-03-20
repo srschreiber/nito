@@ -164,6 +164,7 @@ type notificationMsg string
 
 // incomingWsMsg carries raw bytes of a non-notification WS message.
 type incomingWsMsg []byte
+type echoWsMsg []byte
 
 // waitNotification blocks on the notification channel the readLoop feeds and
 // returns the text as a notificationMsg. The model re-arms this after each hit.
@@ -197,6 +198,20 @@ func waitIncoming() tea.Cmd {
 	}
 }
 
+func waitEcho() tea.Cmd {
+	return func() tea.Msg {
+		ch := connection.EchoChan()
+		if ch == nil {
+			return nil
+		}
+		data, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return echoWsMsg(data)
+	}
+}
+
 func (m model) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	for _, c := range m.comps {
@@ -204,7 +219,7 @@ func (m model) Init() tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	}
-	cmds = append(cmds, waitNotification(), waitIncoming())
+	cmds = append(cmds, waitNotification(), waitIncoming(), waitEcho())
 	return tea.Batch(cmds...)
 }
 
@@ -214,33 +229,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.relayout(msg.Width, msg.Height)
 		return m, nil
 	case types.ConnectedMsg:
-		return m, tea.Batch(waitNotification(), waitIncoming())
+		return m, tea.Batch(waitNotification(), waitIncoming(), waitEcho())
 	case notificationMsg:
 		text := string(msg)
 		return m, tea.Batch(
 			func() tea.Msg { return components.NewResponseAppendMsg("notification: " + text) },
 			waitNotification(),
 		)
-	case incomingWsMsg:
-		var wsMsg wstypes.IncomingWebsocketMessage
+	case echoWsMsg:
+		var wsMsg wstypes.EchoPayload
 		if err := json.Unmarshal([]byte(msg), &wsMsg); err == nil {
-			switch wsMsg.RPCName {
-			case "echo":
-				var p wstypes.EchoPayload
-				if json.Unmarshal(wsMsg.Payload, &p) == nil {
-					text := p.Text
-					return m, tea.Batch(
-						func() tea.Msg { return components.NewResponseAppendMsg("← " + text) },
-						waitIncoming(),
-					)
-				}
-			case "members_updated":
-				return m, tea.Batch(
-					func() tea.Msg { return types.MembersUpdatedMsg{} },
-					waitIncoming(),
-				)
-			}
+			text := wsMsg.Text
+			return m, tea.Batch(
+				func() tea.Msg { return components.NewResponseAppendMsg("echo response: " + text) },
+				waitEcho(),
+			)
 		}
+		return m, waitEcho()
+	case incomingWsMsg:
+		//var wsMsg wstypes.IncomingWebsocketMessage
+		//if err := json.Unmarshal([]byte(msg), &wsMsg); err == nil {
+		//	switch wsMsg.RPCName {
+		//	case "echo":
+		//		var p wstypes.EchoPayload
+		//		if json.Unmarshal(wsMsg.Payload, &p) == nil {
+		//			text := p.Text
+		//			return m, tea.Batch(
+		//				func() tea.Msg { return components.NewResponseAppendMsg("← " + text) },
+		//				waitIncoming(),
+		//			)
+		//		}
+		//	case "members_updated":
+		//		return m, tea.Batch(
+		//			func() tea.Msg { return types.MembersUpdatedMsg{} },
+		//			waitIncoming(),
+		//		)
+		//	}
+		//}
 		return m, waitIncoming()
 	case types.RoomSelectedMsg:
 		roomID := msg.RoomID

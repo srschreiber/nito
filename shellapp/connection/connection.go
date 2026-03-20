@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/shellapp/keys"
+	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
 type Session struct {
@@ -28,6 +30,7 @@ var (
 	session      *Session
 	incomingChan chan []byte // non-notification WS messages routed to the TUI model
 	notifChan    chan string // server-push notification text
+	echoChan     chan []byte // echo messages from the server (for testing connectivity)
 )
 
 func normalizeURL(url string) string {
@@ -93,19 +96,20 @@ func Connect(brokerURL, userID string) error {
 
 	ic := make(chan []byte, 16)
 	nc := make(chan string, 16)
+	echoChan = make(chan []byte, 16)
 	conn = c
 	session = &Session{UserID: userID, BrokerURL: brokerURL}
 	incomingChan = ic
 	notifChan = nc
 
-	go readLoop(c, ic, nc)
+	go readLoop(c, ic, echoChan, nc)
 	return nil
 }
 
 // readLoop runs in the background, routing messages:
 //   - "notification" RPCs → nc (notification text)
 //   - everything else → ic (raw JSON for the TUI model to dispatch)
-func readLoop(c *websocket.Conn, ic chan []byte, nc chan string) {
+func readLoop(c *websocket.Conn, ic, echoChan chan []byte, nc chan string) {
 	defer func() {
 		mu.Lock()
 		if conn == c {
@@ -121,25 +125,37 @@ func readLoop(c *websocket.Conn, ic chan []byte, nc chan string) {
 		if err != nil {
 			return
 		}
-		var peek struct {
-			RPCName string          `json:"rpcName"`
-			Payload json.RawMessage `json:"payload"`
+		var message wstypes.OutgoingWebsocketMessage
+		if json.Unmarshal(data, &message) != nil {
+			log.Println("unmarshal WS message:", err)
+			continue
 		}
-		if err := json.Unmarshal(data, &peek); err == nil && peek.RPCName == "notification" {
-			var p struct {
-				Text string `json:"text"`
-			}
-			if json.Unmarshal(peek.Payload, &p) == nil && p.Text != "" {
-				select {
-				case nc <- p.Text:
-				default:
-				}
+
+		switch message.RPCName {
+		case "notification":
+			var notificationPayload wstypes.NotificationPayload
+			if json.Unmarshal(data, &notificationPayload) != nil {
+				log.Println("unmarshal notification payload:", err)
 				continue
 			}
-		}
-		select {
-		case ic <- data:
-		default:
+			ic <- message.Payload
+			continue
+		case "echo":
+			var echoPayload wstypes.EchoPayload
+			if json.Unmarshal(message.Payload, &echoPayload) != nil {
+				log.Printf("Echo from server: %s", echoPayload.Text)
+				continue
+			}
+			echoChan <- message.Payload
+			continue
+		case "room_message":
+			var roomMessagePayload wstypes.RoomMessagePayload
+			if json.Unmarshal(message.Payload, &roomMessagePayload) != nil {
+				log.Printf("Message from %s in room %s: %s", roomMessagePayload.FromUserID, roomMessagePayload.RoomID, roomMessagePayload.EncryptedText)
+				continue
+			}
+			ic <- message.Payload
+			continue
 		}
 	}
 }
@@ -192,6 +208,12 @@ func IncomingChan() <-chan []byte {
 	mu.Lock()
 	defer mu.Unlock()
 	return incomingChan
+}
+
+func EchoChan() <-chan []byte {
+	mu.Lock()
+	defer mu.Unlock()
+	return echoChan
 }
 
 // signedPost builds a POST request with X-Username and X-Signature headers.
