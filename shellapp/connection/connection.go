@@ -29,7 +29,7 @@ var (
 	conn         *websocket.Conn
 	session      *Session
 	incomingChan chan []byte // non-notification WS messages routed to the TUI model
-	notifChan    chan string // server-push notification text
+	notifChan    chan []byte // server-push notification text
 	echoChan     chan []byte // echo messages from the server (for testing connectivity)
 )
 
@@ -95,7 +95,7 @@ func Connect(brokerURL, userID string) error {
 	})
 
 	ic := make(chan []byte, 16)
-	nc := make(chan string, 16)
+	nc := make(chan []byte, 16)
 	echoChan = make(chan []byte, 16)
 	conn = c
 	session = &Session{UserID: userID, BrokerURL: brokerURL}
@@ -109,7 +109,7 @@ func Connect(brokerURL, userID string) error {
 // readLoop runs in the background, routing messages:
 //   - "notification" RPCs → nc (notification text)
 //   - everything else → ic (raw JSON for the TUI model to dispatch)
-func readLoop(c *websocket.Conn, ic, echoChan chan []byte, nc chan string) {
+func readLoop(c *websocket.Conn, ic, echoChan, nc chan []byte) {
 	defer func() {
 		mu.Lock()
 		if conn == c {
@@ -162,7 +162,7 @@ func readLoop(c *websocket.Conn, ic, echoChan chan []byte, nc chan string) {
 
 // NotifChan returns a receive-only channel of server-push notification text.
 // Returns nil when not connected.
-func NotifChan() <-chan string {
+func NotifChan() <-chan []byte {
 	mu.Lock()
 	defer mu.Unlock()
 	return notifChan

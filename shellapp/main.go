@@ -160,11 +160,11 @@ func (m *model) relayout(termW, termH int) {
 
 // notificationMsg is delivered to the model when the readLoop routes a
 // server-push notification from the broker.
-type notificationMsg string
+type notificationMsg wstypes.NotificationPayload
 
-// incomingWsMsg carries raw bytes of a non-notification WS message.
-type incomingWsMsg []byte
-type echoWsMsg []byte
+// // incomingWsMsg carries raw bytes of a non-notification WS message.
+// type incomingWsMsg []byte
+type echoWsMsg wstypes.EchoPayload
 
 // waitNotification blocks on the notification channel the readLoop feeds and
 // returns the text as a notificationMsg. The model re-arms this after each hit.
@@ -178,23 +178,15 @@ func waitNotification() tea.Cmd {
 		if !ok {
 			return nil
 		}
-		return notificationMsg(text)
-	}
-}
 
-// waitIncoming blocks on the incoming WS channel and returns the raw message.
-// The model re-arms this after each delivery.
-func waitIncoming() tea.Cmd {
-	return func() tea.Msg {
-		ch := connection.IncomingChan()
-		if ch == nil {
-			return nil
+		// conv to notificationMsg for type safety and to avoid string conversions in the readLoop.'
+		var payload wstypes.NotificationPayload
+		if err := json.Unmarshal([]byte(text), &payload); err != nil {
+			fmt.Printf("waitNotification: unmarshal payload: %v\n", err)
+			// to rearm
+			return notificationMsg{}
 		}
-		data, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return incomingWsMsg(data)
+		return notificationMsg(payload)
 	}
 }
 
@@ -208,7 +200,14 @@ func waitEcho() tea.Cmd {
 		if !ok {
 			return nil
 		}
-		return echoWsMsg(data)
+
+		var payload wstypes.EchoPayload
+		if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			fmt.Printf("waitEcho: unmarshal payload: %v\n", err)
+			// to rearm
+			return echoWsMsg{}
+		}
+		return echoWsMsg(payload)
 	}
 }
 
@@ -219,7 +218,7 @@ func (m model) Init() tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	}
-	cmds = append(cmds, waitNotification(), waitIncoming(), waitEcho())
+	cmds = append(cmds, waitNotification(), waitEcho())
 	return tea.Batch(cmds...)
 }
 
@@ -229,44 +228,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.relayout(msg.Width, msg.Height)
 		return m, nil
 	case types.ConnectedMsg:
-		return m, tea.Batch(waitNotification(), waitIncoming(), waitEcho())
+		return m, tea.Batch(waitNotification(), waitEcho())
 	case notificationMsg:
-		text := string(msg)
 		return m, tea.Batch(
-			func() tea.Msg { return components.NewResponseAppendMsg("notification: " + text) },
+			func() tea.Msg { return components.NewResponseAppendMsg("notification: " + msg.Text) },
 			waitNotification(),
 		)
 	case echoWsMsg:
-		var wsMsg wstypes.EchoPayload
-		if err := json.Unmarshal([]byte(msg), &wsMsg); err == nil {
-			text := wsMsg.Text
-			return m, tea.Batch(
-				func() tea.Msg { return components.NewResponseAppendMsg("echo response: " + text) },
-				waitEcho(),
-			)
-		}
-		return m, waitEcho()
-	case incomingWsMsg:
-		//var wsMsg wstypes.IncomingWebsocketMessage
-		//if err := json.Unmarshal([]byte(msg), &wsMsg); err == nil {
-		//	switch wsMsg.RPCName {
-		//	case "echo":
-		//		var p wstypes.EchoPayload
-		//		if json.Unmarshal(wsMsg.Payload, &p) == nil {
-		//			text := p.Text
-		//			return m, tea.Batch(
-		//				func() tea.Msg { return components.NewResponseAppendMsg("← " + text) },
-		//				waitIncoming(),
-		//			)
-		//		}
-		//	case "members_updated":
-		//		return m, tea.Batch(
-		//			func() tea.Msg { return types.MembersUpdatedMsg{} },
-		//			waitIncoming(),
-		//		)
-		//	}
-		//}
-		return m, waitIncoming()
+		text := msg.Text
+		// dispatch a new append message to the history component, and re-arm the echo wait.
+		return m, tea.Batch(
+			func() tea.Msg { return components.NewResponseAppendMsg("echo response: " + text) },
+			waitEcho(),
+		)
 	case types.RoomSelectedMsg:
 		roomID := msg.RoomID
 		m.selectedRoomID = &roomID
