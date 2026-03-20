@@ -101,7 +101,7 @@ func Connect(brokerURL, userID string) error {
 	session = &Session{UserID: userID, BrokerURL: brokerURL}
 	notifChan = nc
 
-	go readLoop(c, roomMessageChan, echoChan, nc)
+	go readLoop(c, echoChan, roomMessageChan, nc)
 	return nil
 }
 
