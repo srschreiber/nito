@@ -7,35 +7,36 @@ import (
 	"log"
 	"time"
 
+	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/broker/database"
-	"github.com/srschreiber/nito/broker/types"
+	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
 // BrokerCreateRoom creates a room owned by userID, storing the encrypted room key.
-func (b *Broker) BrokerCreateRoom(ctx context.Context, userID, name, encryptedRoomKey string) (*types.CreateRoomResponse, error) {
+func (b *Broker) BrokerCreateRoom(ctx context.Context, userID, name, encryptedRoomKey string) (*apitypes.CreateRoomResponse, error) {
 	room, err := database.CreateRoom(ctx, b.db, name, userID, encryptedRoomKey)
 	if err != nil {
 		return nil, err
 	}
-	return &types.CreateRoomResponse{ID: room.ID, Name: room.Name}, nil
+	return &apitypes.CreateRoomResponse{ID: room.ID, Name: room.Name}, nil
 }
 
 // BrokerListUserRooms returns all rooms the user has joined.
-func (b *Broker) BrokerListUserRooms(ctx context.Context, userID string) ([]types.RoomEntry, error) {
+func (b *Broker) BrokerListUserRooms(ctx context.Context, userID string) ([]apitypes.RoomEntry, error) {
 	rows, err := database.ListUserRooms(ctx, b.db, userID)
 	if err != nil {
 		return nil, err
 	}
-	entries := make([]types.RoomEntry, len(rows))
+	entries := make([]apitypes.RoomEntry, len(rows))
 	for i, r := range rows {
-		entries[i] = types.RoomEntry{ID: r.RoomID, Name: r.RoomName, IsOwner: r.IsOwner}
+		entries[i] = apitypes.RoomEntry{ID: r.RoomID, Name: r.RoomName, IsOwner: r.IsOwner}
 	}
 	return entries, nil
 }
 
 // BrokerInviteUser adds invitedUserID to roomID as a pending member, storing their encrypted room key.
 // If the invited user is connected via WebSocket, a push notification is sent.
-func (b *Broker) BrokerInviteUser(ctx context.Context, roomID, invitedByUserID, invitedUsername, encryptedRoomKey string) (*types.InviteUserResponse, error) {
+func (b *Broker) BrokerInviteUser(ctx context.Context, roomID, invitedByUserID, invitedUsername, encryptedRoomKey string) (*apitypes.InviteUserResponse, error) {
 	invitedUserID := b.LookupUserIDByUsername(ctx, invitedUsername)
 	if invitedUserID == "" {
 		return nil, fmt.Errorf("user %q not found", invitedUsername)
@@ -57,7 +58,7 @@ func (b *Broker) BrokerInviteUser(ctx context.Context, roomID, invitedByUserID, 
 	)
 	b.sendNotification(invitedUserID, text)
 
-	return &types.InviteUserResponse{RoomID: member.RoomID, UserID: member.UserID}, nil
+	return &apitypes.InviteUserResponse{RoomID: member.RoomID, UserID: member.UserID}, nil
 }
 
 // notifyMembersUpdated fans out a "members_updated" RPC to every connected co-member of userID.
@@ -68,7 +69,7 @@ func (b *Broker) notifyMembersUpdated(userID string) {
 		log.Printf("notifyMembersUpdated: query co-members for %s: %v", userID, err)
 		return
 	}
-	msg := types.WebsocketMessage{
+	msg := wstypes.IncomingWebsocketMessage{
 		RPCName:   "members_updated",
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    userID,
@@ -96,20 +97,68 @@ func (b *Broker) notifyMembersUpdated(userID string) {
 	}
 }
 
+func (b *Broker) sendRoomMessage(client *Client, message wstypes.IncomingWebsocketMessage) error {
+	var payload wstypes.RoomMessagePayload
+	if err := json.Unmarshal(message.Payload, &payload); err != nil {
+		return fmt.Errorf("unmarshal room_message payload: %w", err)
+	}
+
+	members, err := database.ListRoomMembers(context.Background(), b.db, payload.RoomID)
+	if err != nil {
+		return err
+	}
+
+	for _, member := range members {
+		if member.UserID == client.Session.UserID {
+			continue
+		}
+
+		toClient := b.getClientForUserID(member.UserID)
+		if toClient == nil {
+			continue
+		}
+
+		if err != nil {
+			log.Printf("sendRoomMessage: marshal payload: %v", err)
+			continue
+		}
+
+		msg := wstypes.OutgoingWebsocketMessage{
+			RPCName:   "room_message",
+			RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
+			UserID:    member.UserID,
+			Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),
+			Timestamp: time.Now().Unix(),
+			// forward this message to other clients that are active
+			Payload: message.Payload,
+		}
+		data, err := json.Marshal(msg)
+		if err != nil {
+			log.Printf("sendRoomMessage: marshal message: %v", err)
+			continue
+		}
+
+		select {
+		case toClient.send <- data:
+		default:
+			log.Printf("sendRoomMessage: send channel full for user %s", member.UserID)
+		}
+	}
+	return nil
+}
+
 // sendNotification pushes a notification message to a connected user. No-op if user is offline.
 func (b *Broker) sendNotification(userID, text string) {
-	b.mu.RLock()
-	client := b.clientMap[userID]
-	b.mu.RUnlock()
+	client := b.getClientForUserID(userID)
 	if client == nil {
 		return
 	}
-	payload, err := json.Marshal(types.NotificationPayload{Text: text})
+	payload, err := json.Marshal(wstypes.NotificationPayload{Text: text})
 	if err != nil {
 		log.Printf("notification: marshal payload: %v", err)
 		return
 	}
-	msg := types.WebsocketMessage{
+	msg := wstypes.IncomingWebsocketMessage{
 		RPCName:   "notification",
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    userID,
@@ -130,16 +179,16 @@ func (b *Broker) sendNotification(userID, text string) {
 }
 
 // BrokerListRoomMembers returns joined members of a room with their usernames and online status.
-func (b *Broker) BrokerListRoomMembers(ctx context.Context, roomID string) ([]types.RoomMemberEntry, error) {
+func (b *Broker) BrokerListRoomMembers(ctx context.Context, roomID string) ([]apitypes.RoomMemberEntry, error) {
 	rows, err := database.ListRoomMembersWithUsernames(ctx, b.db, roomID)
 	if err != nil {
 		return nil, err
 	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	entries := make([]types.RoomMemberEntry, len(rows))
+	entries := make([]apitypes.RoomMemberEntry, len(rows))
 	for i, r := range rows {
-		entries[i] = types.RoomMemberEntry{
+		entries[i] = apitypes.RoomMemberEntry{
 			UserID:   r.UserID,
 			Username: r.Username,
 			Online:   b.clientMap[r.UserID] != nil,
@@ -149,14 +198,14 @@ func (b *Broker) BrokerListRoomMembers(ctx context.Context, roomID string) ([]ty
 }
 
 // BrokerListPendingInvites returns rooms the user has been invited to but not yet joined.
-func (b *Broker) BrokerListPendingInvites(ctx context.Context, userID string) ([]types.PendingInvite, error) {
+func (b *Broker) BrokerListPendingInvites(ctx context.Context, userID string) ([]apitypes.PendingInvite, error) {
 	rows, err := database.ListPendingInvites(ctx, b.db, userID)
 	if err != nil {
 		return nil, err
 	}
-	invites := make([]types.PendingInvite, len(rows))
+	invites := make([]apitypes.PendingInvite, len(rows))
 	for i, r := range rows {
-		invites[i] = types.PendingInvite{RoomID: r.RoomID, RoomName: r.RoomName}
+		invites[i] = apitypes.PendingInvite{RoomID: r.RoomID, RoomName: r.RoomName}
 	}
 	return invites, nil
 }

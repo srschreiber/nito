@@ -7,11 +7,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
-	brokertypes "github.com/srschreiber/nito/broker/types"
 	"github.com/srschreiber/nito/shellapp/components"
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
+	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
 // Box overhead constants (lipgloss borders + padding).
@@ -222,11 +222,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			waitNotification(),
 		)
 	case incomingWsMsg:
-		var wsMsg brokertypes.WebsocketMessage
+		var wsMsg wstypes.IncomingWebsocketMessage
 		if err := json.Unmarshal([]byte(msg), &wsMsg); err == nil {
 			switch wsMsg.RPCName {
 			case "echo":
-				var p brokertypes.EchoPayload
+				var p wstypes.EchoPayload
 				if json.Unmarshal(wsMsg.Payload, &p) == nil {
 					text := p.Text
 					return m, tea.Batch(

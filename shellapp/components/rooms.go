@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
@@ -15,7 +16,7 @@ import (
 type roomsPollMsg struct{}
 
 type RoomsComponent struct {
-	rooms    []types.RoomEntry
+	rooms    []apitypes.RoomEntry
 	selected *string
 	cursor   int
 	focused  bool

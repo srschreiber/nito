@@ -11,10 +11,11 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
+	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/broker/auth"
 	"github.com/srschreiber/nito/broker/database"
 	dbtypes "github.com/srschreiber/nito/broker/database/types"
-	"github.com/srschreiber/nito/broker/types"
+	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
 type Session struct {
@@ -36,6 +37,12 @@ type Broker struct {
 	clientMap map[string]*Client
 }
 
+func (b *Broker) getClientForUserID(userID string) *Client {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.clientMap[userID]
+}
+
 func NewBroker(address string, db *pgxpool.Pool) *Broker {
 	return &Broker{
 		Address:   address,
@@ -46,21 +53,21 @@ func NewBroker(address string, db *pgxpool.Pool) *Broker {
 }
 
 // RegisterUser creates a new user in the DB, or returns the existing one if the username is taken.
-func (b *Broker) RegisterUser(ctx context.Context, username, publicKey string) (*types.RegisterResponse, error) {
+func (b *Broker) RegisterUser(ctx context.Context, username, publicKey string) (*apitypes.RegisterResponse, error) {
 	var existing dbtypes.User
 	err := b.db.QueryRow(ctx,
 		`SELECT id, username, public_key, updated_at, created_at FROM users WHERE username = $1`,
 		username,
 	).Scan(&existing.ID, &existing.Username, &existing.PublicKey, &existing.UpdatedAt, &existing.CreatedAt)
 	if err == nil {
-		return &types.RegisterResponse{ID: existing.ID, Username: existing.Username, AlreadyRegistered: true}, nil
+		return &apitypes.RegisterResponse{ID: existing.ID, Username: existing.Username, AlreadyRegistered: true}, nil
 	}
 
 	user, err := database.CreateUser(ctx, b.db, username, &publicKey)
 	if err != nil {
 		return nil, err
 	}
-	return &types.RegisterResponse{ID: user.ID, Username: user.Username}, nil
+	return &apitypes.RegisterResponse{ID: user.ID, Username: user.Username}, nil
 }
 
 // LookupUserIDByUsername resolves a username to its UUID. Returns "" if not found.
@@ -193,7 +200,7 @@ func (b *Broker) readLoop(ctx context.Context, client *Client) error {
 
 		switch messageType {
 		case websocket.TextMessage:
-			var msg types.WebsocketMessage
+			var msg wstypes.IncomingWebsocketMessage
 			if err := json.Unmarshal(data, &msg); err != nil {
 				log.Printf("invalid message from %s: %v", client.Session.UserID, err)
 				continue
@@ -208,16 +215,21 @@ func (b *Broker) readLoop(ctx context.Context, client *Client) error {
 	}
 }
 
-func (b *Broker) handleRPC(client *Client, msg types.WebsocketMessage) {
+func (b *Broker) handleRPC(client *Client, msg wstypes.IncomingWebsocketMessage) {
 	switch msg.RPCName {
 	case "echo":
 		b.handleEcho(client, msg)
+	case "room_message":
+		if b.sendRoomMessage(client, msg) != nil {
+			log.Printf("error handling room_message from %s", client.Session.UserID)
+		}
+
 	default:
 		log.Printf("unknown RPC %q from %s", msg.RPCName, client.Session.UserID)
 	}
 }
 
-func (b *Broker) verifyRPCSignature(client *Client, msg types.WebsocketMessage) error {
+func (b *Broker) verifyRPCSignature(client *Client, msg wstypes.IncomingWebsocketMessage) error {
 	pubKey, err := database.GetUserPublicKeyByUsername(context.Background(), b.db, client.Session.Username)
 	if err != nil || pubKey == nil {
 		return fmt.Errorf("public key not found for user %s", client.Session.Username)
@@ -226,16 +238,16 @@ func (b *Broker) verifyRPCSignature(client *Client, msg types.WebsocketMessage) 
 	return auth.VerifySignature(*pubKey, signed, msg.Signature)
 }
 
-func (b *Broker) handleEcho(client *Client, msg types.WebsocketMessage) {
-	var payload types.EchoPayload
+func (b *Broker) handleEcho(client *Client, msg wstypes.IncomingWebsocketMessage) {
+	var payload wstypes.EchoPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 		log.Printf("echo: bad payload from %s: %v", client.Session.UserID, err)
 		return
 	}
 
 	runes := []rune(payload.Text)
-	if len(runes) > types.EchoMaxChars {
-		runes = runes[:types.EchoMaxChars]
+	if len(runes) > wstypes.EchoMaxChars {
+		runes = runes[:wstypes.EchoMaxChars]
 	}
 	payload.Text = string(runes)
 
@@ -245,7 +257,7 @@ func (b *Broker) handleEcho(client *Client, msg types.WebsocketMessage) {
 		return
 	}
 
-	response := types.WebsocketMessage{
+	response := wstypes.OutgoingWebsocketMessage{
 		RPCName:   "echo",
 		RequestID: msg.RequestID,
 		UserID:    client.Session.UserID,

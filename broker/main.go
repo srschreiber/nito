@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
+	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/broker/auth"
 	"github.com/srschreiber/nito/broker/database"
-	"github.com/srschreiber/nito/broker/types"
 	brokerws "github.com/srschreiber/nito/broker/websocket"
 )
 
@@ -92,7 +92,7 @@ func main() {
 	ctx := context.Background()
 
 	http.HandleFunc("/api/v0/ping", withValidation(ping))
-	http.HandleFunc("/api/v0/register", withValidation(func(w http.ResponseWriter, r *http.Request, req types.RegisterRequest) {
+	http.HandleFunc("/api/v0/register", withValidation(func(w http.ResponseWriter, r *http.Request, req apitypes.RegisterRequest) {
 		resp, err := broker.RegisterUser(r.Context(), req.Username, req.PublicKey)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -101,7 +101,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
-	http.HandleFunc("/api/v0/rooms", withSignature(pool, withValidation(func(w http.ResponseWriter, r *http.Request, req types.CreateRoomRequest) {
+	http.HandleFunc("/api/v0/rooms", withSignature(pool, withValidation(func(w http.ResponseWriter, r *http.Request, req apitypes.CreateRoomRequest) {
 		userID := broker.LookupUserIDByUsername(r.Context(), req.UserID)
 		if userID == "" {
 			http.Error(w, "user not found", http.StatusNotFound)
@@ -132,9 +132,9 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(types.ListRoomsResponse{Rooms: rooms})
+		json.NewEncoder(w).Encode(apitypes.ListRoomsResponse{Rooms: rooms})
 	}))
-	http.HandleFunc("/api/v0/rooms/invite", withSignature(pool, withValidation(func(w http.ResponseWriter, r *http.Request, req types.InviteUserRequest) {
+	http.HandleFunc("/api/v0/rooms/invite", withSignature(pool, withValidation(func(w http.ResponseWriter, r *http.Request, req apitypes.InviteUserRequest) {
 		username := r.Header.Get("X-Username")
 		inviterID := broker.LookupUserIDByUsername(r.Context(), username)
 		if inviterID == "" {
@@ -161,7 +161,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(types.ListRoomMembersResponse{Members: members})
+		json.NewEncoder(w).Encode(apitypes.ListRoomMembersResponse{Members: members})
 	}))
 	http.HandleFunc("/api/v0/rooms/key", withSignature(pool, func(w http.ResponseWriter, r *http.Request) {
 		username := r.Header.Get("X-Username")
@@ -181,7 +181,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(types.GetRoomKeyResponse{EncryptedRoomKey: key})
+		json.NewEncoder(w).Encode(apitypes.GetRoomKeyResponse{EncryptedRoomKey: key})
 	}))
 	http.HandleFunc("/api/v0/rooms/invites", withSignature(pool, func(w http.ResponseWriter, r *http.Request) {
 		username := r.URL.Query().Get("user_id")
@@ -200,9 +200,9 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(types.ListPendingInvitesResponse{Invites: invites})
+		json.NewEncoder(w).Encode(apitypes.ListPendingInvitesResponse{Invites: invites})
 	}))
-	http.HandleFunc("/api/v0/rooms/invites/accept", withSignature(pool, withValidation(func(w http.ResponseWriter, r *http.Request, req types.AcceptInviteRequest) {
+	http.HandleFunc("/api/v0/rooms/invites/accept", withSignature(pool, withValidation(func(w http.ResponseWriter, r *http.Request, req apitypes.AcceptInviteRequest) {
 		username := r.Header.Get("X-Username")
 		userID := broker.LookupUserIDByUsername(r.Context(), username)
 		if userID == "" {
@@ -227,7 +227,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(types.GetUserPublicKeyResponse{PublicKey: pub})
+		json.NewEncoder(w).Encode(apitypes.GetUserPublicKeyResponse{PublicKey: pub})
 	})
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		broker.WsConnect(ctx, w, r)
@@ -237,8 +237,8 @@ func main() {
 	log.Fatal(http.ListenAndServe(cfg.Broker.Addr, nil))
 }
 
-func ping(w http.ResponseWriter, _ *http.Request, req types.PingRequest) {
-	resp := types.PingResponse{Message: req.Message}
+func ping(w http.ResponseWriter, _ *http.Request, req apitypes.PingRequest) {
+	resp := apitypes.PingResponse{Message: req.Message}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)

@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	brokertypes "github.com/srschreiber/nito/broker/types"
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/keys"
 	"github.com/srschreiber/nito/utils"
+	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
 func wcid(args []Argument) string {
@@ -116,7 +116,7 @@ func echoCmd(args []Argument) (string, error) {
 		return "", errors.New("echo: -m/--message <text> is required")
 	}
 
-	payload, err := json.Marshal(brokertypes.EchoPayload{Text: text})
+	payload, err := json.Marshal(wstypes.EchoPayload{Text: text})
 	if err != nil {
 		return "", fmt.Errorf("echo: %w", err)
 	}
@@ -124,7 +124,7 @@ func echoCmd(args []Argument) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("echo: sign: %w", err)
 	}
-	msg := brokertypes.WebsocketMessage{
+	msg := wstypes.IncomingWebsocketMessage{
 		RPCName:   "echo",
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    s.UserID,

@@ -11,20 +11,14 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/shellapp/keys"
-	shelltypes "github.com/srschreiber/nito/shellapp/types"
 )
 
 type Session struct {
 	UserID    string // username (used as the identity token sent to the broker)
 	BrokerURL string
 	RoomID    *string // currently selected room
-}
-
-type RegisterResponse struct {
-	ID                string `json:"id"`
-	Username          string `json:"username"`
-	AlreadyRegistered bool   `json:"alreadyRegistered"`
 }
 
 var (
@@ -46,7 +40,7 @@ func normalizeURL(url string) string {
 
 // Register sends username and public key to the broker, creating a DB entry if the user
 // doesn't exist yet. Returns the user's ID and whether they were already registered.
-func Register(brokerURL, username, publicKey string) (*RegisterResponse, error) {
+func Register(brokerURL, username, publicKey string) (*apitypes.RegisterResponse, error) {
 	brokerURL = normalizeURL(brokerURL)
 	body, _ := json.Marshal(map[string]string{
 		"username":  username,
@@ -60,7 +54,7 @@ func Register(brokerURL, username, publicKey string) (*RegisterResponse, error) 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("register: broker returned %s", resp.Status)
 	}
-	var result RegisterResponse
+	var result apitypes.RegisterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("register: decode response: %w", err)
 	}
@@ -263,7 +257,7 @@ func CreateRoom(name, encryptedRoomKey string) (id, roomName string, err error) 
 }
 
 // ListRooms returns all rooms the current user is a member of.
-func ListRooms() ([]shelltypes.RoomEntry, error) {
+func ListRooms() ([]apitypes.RoomEntry, error) {
 	s := CurrentSession()
 	if s == nil {
 		return nil, errors.New("not connected")
@@ -281,7 +275,7 @@ func ListRooms() ([]shelltypes.RoomEntry, error) {
 		return nil, fmt.Errorf("list rooms: broker returned %s", resp.Status)
 	}
 	var result struct {
-		Rooms []shelltypes.RoomEntry `json:"rooms"`
+		Rooms []apitypes.RoomEntry `json:"rooms"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("list rooms: decode: %w", err)
@@ -390,7 +384,7 @@ func InviteUser(roomID, invitedUsername, encryptedRoomKey string) error {
 }
 
 // ListRoomMembers returns the joined members of a room.
-func ListRoomMembers(roomID string) ([]shelltypes.RoomMember, error) {
+func ListRoomMembers(roomID string) ([]apitypes.RoomMemberEntry, error) {
 	s := CurrentSession()
 	if s == nil {
 		return nil, errors.New("not connected")
@@ -408,7 +402,7 @@ func ListRoomMembers(roomID string) ([]shelltypes.RoomMember, error) {
 		return nil, fmt.Errorf("list room members: broker returned %s", resp.Status)
 	}
 	var result struct {
-		Members []shelltypes.RoomMember `json:"members"`
+		Members []apitypes.RoomMemberEntry `json:"members"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("list room members: decode: %w", err)
@@ -417,7 +411,7 @@ func ListRoomMembers(roomID string) ([]shelltypes.RoomMember, error) {
 }
 
 // ListPendingInvites returns rooms the current user has been invited to but not yet joined.
-func ListPendingInvites() ([]shelltypes.PendingInvite, error) {
+func ListPendingInvites() ([]apitypes.PendingInvite, error) {
 	s := CurrentSession()
 	if s == nil {
 		return nil, errors.New("not connected")
@@ -435,7 +429,7 @@ func ListPendingInvites() ([]shelltypes.PendingInvite, error) {
 		return nil, fmt.Errorf("list invites: broker returned %s", resp.Status)
 	}
 	var result struct {
-		Invites []shelltypes.PendingInvite `json:"invites"`
+		Invites []apitypes.PendingInvite `json:"invites"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("list invites: decode: %w", err)

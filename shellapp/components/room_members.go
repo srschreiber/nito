@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
@@ -13,7 +14,7 @@ import (
 type membersPollMsg struct{}
 
 type RoomMembersComponent struct {
-	members []types.RoomMember
+	members []apitypes.RoomMemberEntry
 	roomID  *string
 	width   int
 	height  int
