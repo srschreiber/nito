@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/srschreiber/nito/shellapp/components"
 	"github.com/srschreiber/nito/shellapp/connection"
+	"github.com/srschreiber/nito/shellapp/keys"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
 	wstypes "github.com/srschreiber/nito/websocket_types"
@@ -205,6 +207,31 @@ func waitRoomMessages() tea.Cmd {
 			// to rearm
 			return roomMessageWsMsg{}
 		}
+
+		encRoomKey, err := connection.GetMyRoomKey(payload.RoomID)
+		if err != nil {
+			fmt.Printf("waitRoomMessages: get room key: %v\n", err)
+			return roomMessageWsMsg{}
+		}
+		roomKey, err := keys.DecryptRoomKey(encRoomKey)
+		if err != nil {
+			fmt.Printf("waitRoomMessages: decrypt room key: %v\n", err)
+			return roomMessageWsMsg{}
+		}
+		ciphertext, err := base64.StdEncoding.DecodeString(payload.EncryptedText)
+		if err != nil {
+			fmt.Printf("waitRoomMessages: decode ciphertext: %v\n", err)
+			return roomMessageWsMsg{}
+		}
+		// TODO: Pass per-user message count to enable ratcheting. Currently always nil,
+		// which reuses the same base key for every message. To add forward secrecy,
+		// track a per-(room, sender) receive counter and pass it here, incrementing after each message.
+		plaintext, err := keys.DecryptMessageWithRoomKey(ciphertext, payload.FromUserID, roomKey, nil)
+		if err != nil {
+			fmt.Printf("waitRoomMessages: decrypt message: %v\n", err)
+			return roomMessageWsMsg{}
+		}
+		payload.EncryptedText = string(plaintext)
 		return roomMessageWsMsg(payload)
 	}
 }

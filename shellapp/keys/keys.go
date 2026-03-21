@@ -2,6 +2,7 @@ package keys
 
 import (
 	"crypto"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -9,9 +10,16 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/crypto/chacha20poly1305"
+
+	"github.com/srschreiber/nito/utils"
 )
+
+var NonceMap = map[string]map[string]struct{}{}
 
 const keyDir = ".nito"
 
@@ -212,4 +220,68 @@ func EncryptRoomKey(roomKey []byte) (string, error) {
 		return "", fmt.Errorf("encrypt room key: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(ct), nil
+}
+
+// GenerateMessageEncryptionKey generates a message encryption key derived from the room key and user ID
+// using HMAC-SHA256
+func GenerateMessageEncryptionKey(roomKey []byte, userID string) []byte {
+	hash := hmac.New(sha256.New, roomKey)
+	hash.Write([]byte(userID))
+	return hash.Sum(nil)
+}
+
+// EncryptMessageWithRoomKey encrypts the message with the room key
+// The function looks like
+// key_message1 = HMAC(roomKey, userID || userMessageCount)
+// key_message2 = HMAC(key_message1, userID || userMessageCount)
+// key_message3 = HMAC(key_message2, userID || userMessageCount)
+// it is on a per-user basis to avoid race conditions that can affect message ordering
+// once the key is obtained, ChaCha20-Poly1305 can be used to encrypt the message with the derived key
+// Apparently, ChaCha20-Poly1305 is fast for software-only environments with short messages
+// This can be used as a util for a ratchet scheme if userMessageCount is set and increments, using the
+// output key as the new room key for the next message.
+// This way, even if a key is compromised, only messages encrypted with that key are at risk, and future messages remain secure.
+func EncryptMessageWithRoomKey(message []byte, userID string, roomKey []byte, userMessageCount *int) ([]byte, error) {
+	encKey := GenerateMessageEncryptionKey(roomKey, fmt.Sprintf("%s%d", userID, utils.DerefOrZero(userMessageCount)))
+	aead, err := chacha20poly1305.New(encKey)
+	if err != nil {
+		return nil, fmt.Errorf("create AEAD cipher: %w", err)
+	}
+
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, fmt.Errorf("generate nonce: %w", err)
+	}
+
+	ciphertext := aead.Seal(nil, nonce, message, nil)
+	return append(nonce, ciphertext...), nil
+}
+
+func DecryptMessageWithRoomKey(message []byte, userID string, roomKey []byte, userMessageCount *int) ([]byte, error) {
+	encKey := GenerateMessageEncryptionKey(roomKey, fmt.Sprintf("%s%d", userID, utils.DerefOrZero(userMessageCount)))
+	aead, err := chacha20poly1305.New(encKey)
+	if err != nil {
+		return nil, fmt.Errorf("create AEAD cipher: %w", err)
+	}
+
+	nonceSize := aead.NonceSize()
+	if len(message) < nonceSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+	nonce, ciphertext := message[:nonceSize], message[nonceSize:]
+	userNonces, ok := NonceMap[userID]
+	if !ok {
+		userNonces = make(map[string]struct{})
+		NonceMap[userID] = userNonces
+	}
+	if _, exists := userNonces[string(nonce)]; exists {
+		return nil, fmt.Errorf("nonce reuse detected for user %s", userID)
+	}
+	userNonces[string(nonce)] = struct{}{}
+
+	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt message: %w", err)
+	}
+	return plaintext, nil
 }

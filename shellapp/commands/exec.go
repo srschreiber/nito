@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -285,10 +286,26 @@ func sayCmd(args []Argument) (string, error) {
 		return "", errors.New("say: -m/--message <text> is required")
 	}
 
+	encRoomKey, err := connection.GetMyRoomKey(roomID)
+	if err != nil {
+		return "", fmt.Errorf("say: get room key: %w", err)
+	}
+	roomKey, err := keys.DecryptRoomKey(encRoomKey)
+	if err != nil {
+		return "", fmt.Errorf("say: decrypt room key: %w", err)
+	}
+	// TODO: Pass per-user message count to enable ratcheting. Currently always nil,
+	// which reuses the same base key for every message. To add forward secrecy,
+	// maintain a per-room send counter and pass it here, incrementing after each send.
+	ciphertext, err := keys.EncryptMessageWithRoomKey([]byte(text), s.UserID, roomKey, nil)
+	if err != nil {
+		return "", fmt.Errorf("say: encrypt: %w", err)
+	}
+
 	payload, err := json.Marshal(wstypes.RoomMessagePayload{
 		RoomID:        roomID,
 		FromUserID:    s.UserID,
-		EncryptedText: text,
+		EncryptedText: base64.StdEncoding.EncodeToString(ciphertext),
 	})
 	if err != nil {
 		return "", fmt.Errorf("say: %w", err)
