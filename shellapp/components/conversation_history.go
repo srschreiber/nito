@@ -105,7 +105,7 @@ func (h *ConversationHistory) contentBudget() int {
 	}
 	// give a little buffer too. IDK why we need to do this, but it fixes bugs and it hurts my head
 	// trying to figure out why we need it, so I'm just gonna leave it here ¯\_(ツ)_/¯
-	b -= 10
+	b -= 20
 	return b
 }
 
@@ -200,8 +200,6 @@ func (h *ConversationHistory) Render() string {
 		if start < 0 {
 			start = 0
 		}
-
-		end -= 8
 
 		if showAbove {
 			rows = append(rows, styles.Grey.Render("↑ more"))
