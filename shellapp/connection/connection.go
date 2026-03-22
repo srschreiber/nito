@@ -131,7 +131,7 @@ func readLoop(c *websocket.Conn, echoChan, roomMessageChan, nc chan []byte) {
 		}
 
 		switch message.RPCName {
-		case "notification":
+		case wstypes.RPCNotification:
 			var notificationPayload wstypes.NotificationPayload
 			if json.Unmarshal(data, &notificationPayload) != nil {
 				log.Println("unmarshal notification payload:", err)
@@ -139,7 +139,7 @@ func readLoop(c *websocket.Conn, echoChan, roomMessageChan, nc chan []byte) {
 			}
 			nc <- message.Payload
 			continue
-		case "echo":
+		case wstypes.RPCEcho:
 			var echoPayload wstypes.EchoPayload
 			if json.Unmarshal(message.Payload, &echoPayload) != nil {
 				log.Printf("Echo from server: %s", echoPayload.Text)
@@ -147,7 +147,7 @@ func readLoop(c *websocket.Conn, echoChan, roomMessageChan, nc chan []byte) {
 			}
 			echoChan <- message.Payload
 			continue
-		case "room_message":
+		case wstypes.RPCRoomMessage:
 			var roomMessagePayload wstypes.RoomMessagePayload
 			if json.Unmarshal(message.Payload, &roomMessagePayload) != nil {
 				log.Printf("Message from %s in room %s: %s", roomMessagePayload.FromUserID, roomMessagePayload.RoomID, roomMessagePayload.EncryptedText)

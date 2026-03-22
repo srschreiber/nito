@@ -21,6 +21,13 @@ type ToClientWsMessage struct {
 	Payload   json.RawMessage `json:"payload" validate:"required"`
 }
 
+const (
+	RPCEcho           = "echo"
+	RPCRoomMessage    = "room_message"
+	RPCNotification   = "notification"
+	RPCMembersUpdated = "members_updated"
+)
+
 const EchoMaxChars = 1024
 
 type EchoPayload struct {

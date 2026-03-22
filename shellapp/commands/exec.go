@@ -121,12 +121,12 @@ func echoCmd(args []Argument) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("echo: %w", err)
 	}
-	sig, err := keys.Sign(s.UserID + ":echo")
+	sig, err := keys.Sign(s.UserID + ":" + wstypes.RPCEcho)
 	if err != nil {
 		return "", fmt.Errorf("echo: sign: %w", err)
 	}
 	msg := wstypes.ToBrokerWsMessage{
-		RPCName:   "echo",
+		RPCName:   wstypes.RPCEcho,
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    s.UserID,
 		Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -310,12 +310,12 @@ func sayCmd(args []Argument) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("say: %w", err)
 	}
-	sig, err := keys.Sign(s.UserID + ":room_message")
+	sig, err := keys.Sign(s.UserID + ":" + wstypes.RPCRoomMessage)
 	if err != nil {
 		return "", fmt.Errorf("say: sign: %w", err)
 	}
 	msg := wstypes.ToBrokerWsMessage{
-		RPCName:   "room_message",
+		RPCName:   wstypes.RPCRoomMessage,
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    s.UserID,
 		Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),

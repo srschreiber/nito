@@ -70,7 +70,7 @@ func (b *Broker) notifyMembersUpdated(userID string) {
 		return
 	}
 	msg := wstypes.ToClientWsMessage{
-		RPCName:   "members_updated",
+		RPCName:   wstypes.RPCMembersUpdated,
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    userID,
 		Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -89,11 +89,7 @@ func (b *Broker) notifyMembersUpdated(userID string) {
 		if client == nil {
 			continue
 		}
-		select {
-		case client.send <- data:
-		default:
-			log.Printf("notifyMembersUpdated: send channel full for user %s", coID)
-		}
+		client.trySend(data)
 	}
 }
 
@@ -124,7 +120,7 @@ func (b *Broker) sendRoomMessage(client *Client, message wstypes.ToBrokerWsMessa
 		}
 
 		msg := wstypes.ToClientWsMessage{
-			RPCName:   "room_message",
+			RPCName:   wstypes.RPCRoomMessage,
 			RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 			UserID:    member.UserID,
 			Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -138,12 +134,10 @@ func (b *Broker) sendRoomMessage(client *Client, message wstypes.ToBrokerWsMessa
 			continue
 		}
 
-		select {
-		case toClient.send <- data:
-		default:
-			log.Printf("sendRoomMessage: send channel full for user %s", member.UserID)
-		}
+		toClient.trySend(data)
 	}
+
+	b.outbound.Enqueue(payload)
 	return nil
 }
 
@@ -159,7 +153,7 @@ func (b *Broker) sendNotification(userID, text string) {
 		return
 	}
 	msg := wstypes.ToClientWsMessage{
-		RPCName:   "notification",
+		RPCName:   wstypes.RPCNotification,
 		RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
 		UserID:    userID,
 		Nonce:     fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -171,11 +165,7 @@ func (b *Broker) sendNotification(userID, text string) {
 		log.Printf("notification: marshal message: %v", err)
 		return
 	}
-	select {
-	case client.send <- data:
-	default:
-		log.Printf("notification: send channel full for user %s", userID)
-	}
+	client.trySend(data)
 }
 
 // BrokerListRoomMembers returns joined members of a room with their usernames and online status.

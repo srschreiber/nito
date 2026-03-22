@@ -44,7 +44,8 @@ func main() {
 	}
 	defer pool.Close()
 
-	broker := brokerws.NewBroker(cfg.Broker.Addr, pool)
+	ctx := context.Background()
+	broker := brokerws.NewBroker(ctx, cfg.Broker.Addr, pool)
 	handler.New(broker, pool).Register()
 
 	log.Printf("broker listening on %s", cfg.Broker.Addr)

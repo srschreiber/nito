@@ -3,7 +3,6 @@ package websocket
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -15,6 +14,7 @@ import (
 	"github.com/srschreiber/nito/broker/auth"
 	"github.com/srschreiber/nito/broker/database"
 	dbtypes "github.com/srschreiber/nito/broker/database/types"
+	"github.com/srschreiber/nito/broker/message_delivery"
 	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
@@ -35,6 +35,17 @@ type Broker struct {
 	upgrader  websocket.Upgrader
 	mu        sync.RWMutex
 	clientMap map[string]*Client
+	outbound  *message_delivery.OutboundRoomMessages
+}
+
+// trySend attempts a non-blocking send to the client's send channel.
+// If the channel is full the message is dropped and a warning is logged.
+func (c *Client) trySend(data []byte) {
+	select {
+	case c.send <- data:
+	default:
+		log.Printf("send channel full for user %s — message dropped", c.Session.UserID)
+	}
 }
 
 func (b *Broker) getClientForUserID(userID string) *Client {
@@ -43,12 +54,15 @@ func (b *Broker) getClientForUserID(userID string) *Client {
 	return b.clientMap[userID]
 }
 
-func NewBroker(address string, db *pgxpool.Pool) *Broker {
+func NewBroker(ctx context.Context, address string, db *pgxpool.Pool) *Broker {
+	outbound := message_delivery.NewOutboundRoomMessages(ctx, db)
+	outbound.Start()
 	return &Broker{
 		Address:   address,
 		db:        db,
 		clientMap: make(map[string]*Client),
 		upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		outbound:  outbound,
 	}
 }
 
@@ -213,62 +227,4 @@ func (b *Broker) readLoop(ctx context.Context, client *Client) error {
 			b.handleRPC(client, msg)
 		}
 	}
-}
-
-func (b *Broker) handleRPC(client *Client, msg wstypes.ToBrokerWsMessage) {
-	switch msg.RPCName {
-	case "echo":
-		b.handleEcho(client, msg)
-	case "room_message":
-		if b.sendRoomMessage(client, msg) != nil {
-			log.Printf("error handling room_message from %s", client.Session.UserID)
-		}
-
-	default:
-		log.Printf("unknown RPC %q from %s", msg.RPCName, client.Session.UserID)
-	}
-}
-
-func (b *Broker) verifyRPCSignature(client *Client, msg wstypes.ToBrokerWsMessage) error {
-	pubKey, err := database.GetUserPublicKeyByUsername(context.Background(), b.db, client.Session.Username)
-	if err != nil || pubKey == nil {
-		return fmt.Errorf("public key not found for user %s", client.Session.Username)
-	}
-	signed := client.Session.Username + ":" + msg.RPCName
-	return auth.VerifySignature(*pubKey, signed, msg.Signature)
-}
-
-func (b *Broker) handleEcho(client *Client, msg wstypes.ToBrokerWsMessage) {
-	var payload wstypes.EchoPayload
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		log.Printf("echo: bad payload from %s: %v", client.Session.UserID, err)
-		return
-	}
-
-	runes := []rune(payload.Text)
-	if len(runes) > wstypes.EchoMaxChars {
-		runes = runes[:wstypes.EchoMaxChars]
-	}
-	payload.Text = string(runes)
-
-	respPayload, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("echo: marshal error: %v", err)
-		return
-	}
-
-	response := wstypes.ToClientWsMessage{
-		RPCName:   "echo",
-		RequestID: msg.RequestID,
-		UserID:    client.Session.UserID,
-		Nonce:     msg.Nonce,
-		Timestamp: time.Now().Unix(),
-		Payload:   respPayload,
-	}
-	data, err := json.Marshal(response)
-	if err != nil {
-		log.Printf("echo: marshal response error: %v", err)
-		return
-	}
-	client.send <- data
 }
