@@ -2,14 +2,15 @@ package components
 
 import (
 	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	lipgloss "charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/srschreiber/nito/shellapp/styles"
 )
 
 type historyEntry struct {
-	text       string
+	text       string // raw text, may contain newlines/tabs; wrapped at render time
 	isResponse bool
 }
 
@@ -21,17 +22,17 @@ type AppendHistoryMsg struct {
 // ClearHistoryMsg is emitted by CommandComponent when history should be cleared.
 type ClearHistoryMsg struct{}
 
-// NewResponseAppendMsg builds an AppendHistoryMsg for a single server-response line.
+// NewResponseAppendMsg builds an AppendHistoryMsg for a single server-response entry.
 func NewResponseAppendMsg(text string) AppendHistoryMsg {
 	return AppendHistoryMsg{Entries: []historyEntry{{text: text, isResponse: true}}}
 }
 
 type ConversationHistory struct {
 	entries []historyEntry
-	scroll  int
+	scroll  int // lines scrolled up from the bottom (0 = pinned to bottom)
 	focused bool
-	width   int // lipgloss content width (excludes border+padding)
-	height  int // lipgloss content height (excludes border)
+	width   int // content width passed from layout (lipgloss Width value)
+	height  int // content height passed from layout (lipgloss Height value)
 }
 
 func NewConversationHistory(width, height int) *ConversationHistory {
@@ -49,28 +50,84 @@ func (h *ConversationHistory) SetFocused(focused bool) {
 	h.focused = focused
 }
 
-// visibleRows is how many entry lines fit, leaving room for title + line indicator.
-func (h *ConversationHistory) visibleRows() int {
-	v := h.height - 2 // title row + line indicator row
-	if v < 1 {
+// textWidth is the usable text column width inside the border and padding.
+// The style uses Padding(0,1) so each horizontal side consumes 1 column.
+func (h *ConversationHistory) textWidth() int {
+	w := h.width - 2
+	if w < 1 {
 		return 1
 	}
-	return v
+	return w
 }
 
-func (h *ConversationHistory) maxScroll() int {
-	excess := len(h.entries) - h.visibleRows()
-	if excess < 0 {
-		return 0
+// wrapEntry splits one raw entry into display-ready styled lines, hard-wrapping at tw.
+func wrapEntry(e historyEntry, tw int) []string {
+	raw := strings.ReplaceAll(e.text, "\t", "    ")
+	var lines []string
+	for _, para := range strings.Split(raw, "\n") {
+		runes := []rune(para)
+		if len(runes) == 0 {
+			lines = append(lines, "")
+			continue
+		}
+		for len(runes) > tw {
+			lines = append(lines, string(runes[:tw]))
+			runes = runes[tw:]
+		}
+		lines = append(lines, string(runes))
 	}
-	return excess
+	return lines
+}
+
+// allLines expands all entries into a flat, styled slice of display strings.
+// Always derived from raw entries so terminal resize is handled automatically.
+func (h *ConversationHistory) allLines() []string {
+	tw := h.textWidth()
+	var lines []string
+	for _, e := range h.entries {
+		for _, l := range wrapEntry(e, tw) {
+			if e.isResponse {
+				lines = append(lines, styles.ResponseStyle.Render(l))
+			} else {
+				lines = append(lines, styles.Grey.Render(l))
+			}
+		}
+	}
+	return lines
+}
+
+// contentBudget is the number of rows available for scrollable content.
+// Fixed rows consumed: 1 (title) + 1 (status line) = 2.
+func (h *ConversationHistory) contentBudget() int {
+	b := h.height - 2
+	if b < 1 {
+		return 1
+	}
+	// give a little buffer too. IDK why we need to do this, but it fixes bugs and it hurts my head
+	// trying to figure out why we need it, so I'm just gonna leave it here ¯\_(ツ)_/¯
+	b -= 10
+	return b
+}
+
+// clampScroll ensures h.scroll stays within valid bounds given total line count.
+func (h *ConversationHistory) clampScroll(total int) {
+	maxScroll := total - h.contentBudget()
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if h.scroll > maxScroll {
+		h.scroll = maxScroll
+	}
+	if h.scroll < 0 {
+		h.scroll = 0
+	}
 }
 
 func (h *ConversationHistory) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case AppendHistoryMsg:
 		h.entries = append(h.entries, msg.Entries...)
-		h.scroll = 0
+		h.scroll = 0 // pin to bottom on new content
 	case ClearHistoryMsg:
 		h.entries = nil
 		h.scroll = 0
@@ -78,16 +135,21 @@ func (h *ConversationHistory) Update(msg tea.Msg) tea.Cmd {
 		if !h.focused {
 			return nil
 		}
+		lines := h.allLines()
+		h.clampScroll(len(lines))
+		budget := h.contentBudget()
+		maxScroll := len(lines) - budget
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
 		switch msg.String() {
 		case "up":
-			h.scroll++
-			if h.scroll > h.maxScroll() {
-				h.scroll = h.maxScroll()
+			if h.scroll < maxScroll {
+				h.scroll++
 			}
 		case "down":
-			h.scroll--
-			if h.scroll < 0 {
-				h.scroll = 0
+			if h.scroll > 0 {
+				h.scroll--
 			}
 		}
 	}
@@ -95,51 +157,62 @@ func (h *ConversationHistory) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (h *ConversationHistory) Render() string {
-	render := styles.SectionTitleStyle.Render("Commands") + "\n"
+	// Fixed first row: title.
+	rows := []string{styles.SectionTitleStyle.Render("Commands")}
 
 	if len(h.entries) == 0 {
-		render += styles.Grey.Render("No messages yet.")
+		rows = append(rows, styles.Grey.Render("No messages yet."))
 	} else {
-		// rows available for entries + indicators (title and line counter always occupy 2)
-		rows := h.height - 2
+		lines := h.allLines()
+		total := len(lines)
+		h.clampScroll(total)
 
-		// "↓ more" is known before we pick the window (depends only on scroll)
-		showBelow := h.scroll > 0
-		if showBelow {
-			rows--
+		budget := h.contentBudget()
+
+		// Determine the bottom of the viewport.
+		end := total - h.scroll
+		if end > total {
+			end = total
+		}
+		// Tentative start with full budget.
+		start := end - budget
+		if start < 0 {
+			start = 0
 		}
 
-		viewEnd := len(h.entries) - h.scroll
-		viewStart := viewEnd - rows
-		if viewStart < 0 {
-			viewStart = 0
-		}
+		showAbove := start > 0
+		showBelow := end < total
 
-		// "↑ more" depends on viewStart; if it will show, shrink the window by 1
-		showAbove := viewStart > 0
+		// Reserve rows for indicators.
+		rows_ := budget
 		if showAbove {
-			rows--
-			viewStart = viewEnd - rows
-			if viewStart < 0 {
-				viewStart = 0
-			}
-		}
-
-		if showAbove {
-			render += styles.Grey.Render("↑ more") + "\n"
-		}
-		for i := viewStart; i < viewEnd; i++ {
-			entry := h.entries[i]
-			if entry.isResponse {
-				render += styles.ResponseStyle.Render(entry.text) + "\n"
-			} else {
-				render += styles.Grey.Render(entry.text) + "\n"
-			}
+			rows_--
 		}
 		if showBelow {
-			render += styles.Grey.Render("↓ more") + "\n"
+			rows_--
 		}
-		render += styles.LineStyle.Render(fmt.Sprintf("L%d/%d", viewEnd, len(h.entries)))
+		if rows_ < 0 {
+			rows_ = 0
+		}
+
+		// Recompute start with the tighter budget (end stays fixed).
+		start = end - rows_
+		if start < 0 {
+			start = 0
+		}
+
+		end -= 8
+
+		if showAbove {
+			rows = append(rows, styles.Grey.Render("↑ more"))
+		}
+		rows = append(rows, lines[start:end]...)
+		if showBelow {
+			rows = append(rows, styles.Grey.Render("↓ more"))
+		}
+
+		// Fixed last row: position indicator.
+		rows = append(rows, styles.LineStyle.Render(fmt.Sprintf("L%d/%d", end, total)))
 	}
 
 	borderColor := lipgloss.Color("238")
@@ -152,5 +225,5 @@ func (h *ConversationHistory) Render() string {
 		Padding(0, 1).
 		Width(h.width).
 		Height(h.height)
-	return style.Render(render)
+	return style.Render(strings.Join(rows, "\n"))
 }

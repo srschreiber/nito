@@ -157,7 +157,7 @@ func (m *model) relayout(termW, termH int) {
 	m.rooms.SetSize(l.roomsW, l.roomsH)
 	m.members.SetSize(l.membersW, l.roomsH)
 	m.status.SetSize(l.statW, l.statH)
-	m.command.SetWidth(l.cmdW, l.histW)
+	m.command.SetWidth(l.cmdW)
 }
 
 // notificationMsg is delivered to the model when the readLoop routes a

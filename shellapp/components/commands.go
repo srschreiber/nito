@@ -1,7 +1,6 @@
 package components
 
 import (
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -24,7 +23,6 @@ type CommandComponent struct {
 	cursorVisible  bool
 	blinkGen       int
 	width          int
-	histWrapWidth  int // usable text width inside the history box
 	// command history (up/down navigation)
 	cmdHistory []string
 	historyIdx int    // -1 = not navigating
@@ -37,24 +35,12 @@ func NewCommandComponent(width int) *CommandComponent {
 		cursorVisible: true,
 		historyIdx:    -1,
 		width:         width,
-		histWrapWidth: histWrapFromWidth(width),
 		cmdHistory:    history.Load(),
 	}
 }
 
-// histWrapFromWidth derives the text wrap width from the history content width.
-// The history box uses Padding(0,1) so each side subtracts 1 from usable width.
-func histWrapFromWidth(histWidth int) int {
-	w := histWidth - 2
-	if w < 1 {
-		return 1
-	}
-	return w
-}
-
-func (c *CommandComponent) SetWidth(cmdWidth, histWidth int) {
-	c.width = cmdWidth
-	c.histWrapWidth = histWrapFromWidth(histWidth)
+func (c *CommandComponent) SetWidth(width int) {
+	c.width = width
 }
 
 func (l *CommandComponent) newBlinkCmd() tea.Cmd {
@@ -77,23 +63,6 @@ func (l *CommandComponent) Init() tea.Cmd {
 
 func (l *CommandComponent) SetFocused(focused bool) {
 	l.focused = focused
-}
-
-// wrapText splits s into chunks of at most width runes.
-func wrapText(s string, width int) []string {
-	runes := []rune(s)
-	if len(runes) <= width {
-		return []string{s}
-	}
-	var lines []string
-	for len(runes) > width {
-		lines = append(lines, string(runes[:width]))
-		runes = runes[width:]
-	}
-	if len(runes) > 0 {
-		lines = append(lines, string(runes))
-	}
-	return lines
 }
 
 func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
@@ -200,28 +169,15 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 	l.textFieldValue = ""
 	l.cursorPos = 0
 
-	var entries []historyEntry
-	for i, line := range wrapText(cmd, l.histWrapWidth) {
-		if i == 0 {
-			entries = append(entries, historyEntry{text: "> " + line})
-		} else {
-			entries = append(entries, historyEntry{text: "  " + line})
-		}
+	entries := []historyEntry{
+		{text: "> " + cmd},
 	}
 
 	output, signal, err := commands.ExecCommand(cmd)
 	if err != nil {
-		for _, para := range strings.Split(err.Error(), "\n") {
-			for _, line := range wrapText(para, l.histWrapWidth) {
-				entries = append(entries, historyEntry{text: line, isResponse: true})
-			}
-		}
+		entries = append(entries, historyEntry{text: err.Error(), isResponse: true})
 	} else if output != "" {
-		for _, para := range strings.Split(output, "\n") {
-			for _, line := range wrapText(para, l.histWrapWidth) {
-				entries = append(entries, historyEntry{text: line, isResponse: true})
-			}
-		}
+		entries = append(entries, historyEntry{text: output, isResponse: true})
 	}
 
 	userID := ""
