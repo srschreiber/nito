@@ -29,40 +29,40 @@ type CommandDef struct {
 }
 
 var Registry = []CommandDef{
-	{Name: "clear", Desc: "clear the screen"},
-	{Name: "exit", Desc: "exit the shell"},
-	{Name: "register", Desc: "register a user ID with a broker (must be done before connect)", Args: []ArgDef{
+	{Name: CmdClear, Desc: "clear the screen"},
+	{Name: CmdExit, Desc: "exit the shell"},
+	{Name: CmdRegister, Desc: "register a user ID with a broker (must be done before connect)", Args: []ArgDef{
 		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:7070)"},
 		{Short: "u", Long: "user", Desc: "user ID to register"},
 	}},
-	{Name: "connect", Desc: "establish a persistent WebSocket connection to a broker", Args: []ArgDef{
+	{Name: CmdConnect, Desc: "establish a persistent WebSocket connection to a broker", Args: []ArgDef{
 		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:7070)"},
 		{Short: "u", Long: "user", Desc: "user ID to connect as (must be registered first)"},
 	}},
-	{Name: "echo", Desc: "send a message to the broker and receive it back (max 1024 chars)", Args: []ArgDef{
+	{Name: CmdEcho, Desc: "send a message to the broker and receive it back (max 1024 chars)", Args: []ArgDef{
 		{Short: "m", Long: "message", Desc: "message text to echo"},
 	}},
-	{Name: "ping", Desc: "test connectivity to a broker via WebSocket", Args: []ArgDef{
+	{Name: CmdPing, Desc: "test connectivity to a broker via WebSocket", Args: []ArgDef{
 		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:7070)"},
 	}},
-	{Name: "wcid", Desc: "describe all commands and their arguments", Args: []ArgDef{
+	{Name: CmdWcid, Desc: "describe all commands and their arguments", Args: []ArgDef{
 		{Short: "c", Long: "command", Desc: "show details for a specific command"},
 	}},
-	{Name: "room-create", Desc: "create a new room; generates an AES-256 room key and encrypts it with your public key", Args: []ArgDef{
+	{Name: CmdRoomCreate, Desc: "create a new room; generates an AES-256 room key and encrypts it with your public key", Args: []ArgDef{
 		{Short: "n", Long: "name", Desc: "room name"},
 	}},
-	{Name: "room-list", Desc: "list all rooms you have joined"},
-	{Name: "room-select", Desc: "select a room by name or ID (sets the active room for invite and members)", Args: []ArgDef{
+	{Name: CmdRoomList, Desc: "list all rooms you have joined"},
+	{Name: CmdRoomSelect, Desc: "select a room by name or ID (sets the active room for invite and members)", Args: []ArgDef{
 		{Short: "r", Long: "room", Desc: "room name or ID prefix"},
 	}},
-	{Name: "room-invite", Desc: "invite a user to the currently selected room", Args: []ArgDef{
+	{Name: CmdRoomInvite, Desc: "invite a user to the currently selected room", Args: []ArgDef{
 		{Short: "u", Long: "user", Desc: "username to invite"},
 	}},
-	{Name: "room-invites", Desc: "list pending room invitations sent to you"},
-	{Name: "room-accept", Desc: "accept a pending room invitation", Args: []ArgDef{
+	{Name: CmdRoomInvites, Desc: "list pending room invitations sent to you"},
+	{Name: CmdRoomAccept, Desc: "accept a pending room invitation", Args: []ArgDef{
 		{Short: "r", Long: "room", Desc: "room ID to accept"},
 	}},
-	{Name: "say", Desc: "send a message to the currently selected room", Args: []ArgDef{
+	{Name: CmdSay, Desc: "send a message to the currently selected room", Args: []ArgDef{
 		{Short: "m", Long: "message", Desc: "message text to send"},
 	}},
 }
