@@ -57,7 +57,8 @@ func (h *ConversationHistory) textWidth() int {
 	if w < 1 {
 		return 1
 	}
-	return w
+	paddingRight := 5
+	return w - paddingRight
 }
 
 // wrapEntry splits one raw entry into display-ready styled lines, hard-wrapping at tw.
@@ -105,7 +106,7 @@ func (h *ConversationHistory) contentBudget() int {
 	}
 	// give a little buffer too. IDK why we need to do this, but it fixes bugs and it hurts my head
 	// trying to figure out why we need it, so I'm just gonna leave it here ¯\_(ツ)_/¯
-	b -= 20
+	b -= 4
 	return b
 }
 
