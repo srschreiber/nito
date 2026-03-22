@@ -2,4 +2,5 @@
 insert into role_permissions (role, permission_id)
 select 'member', id from permissions
 where name in ('invite_members', 'view_audit_log')
+ON CONFLICT DO NOTHING
 ;

@@ -5,8 +5,10 @@ insert into permissions (name, description) values
     ('change_member_roles', 'Change the role of a room member'),
     ('manage_room_settings','Update room name and other settings'),
     ('view_audit_log',      'View the room audit log')
+ON CONFLICT (name) DO NOTHING
 ;
 
 insert into role_permissions (role, permission_id)
 select 'admin', id from permissions
+ON CONFLICT DO NOTHING
 ;

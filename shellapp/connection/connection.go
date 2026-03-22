@@ -150,7 +150,7 @@ func readLoop(c *websocket.Conn, echoChan, roomMessageChan, nc chan []byte) {
 		case wstypes.RPCRoomMessage:
 			var roomMessagePayload wstypes.RoomMessagePayload
 			if json.Unmarshal(message.Payload, &roomMessagePayload) != nil {
-				log.Printf("Message from %s in room %s: %s", roomMessagePayload.FromUserID, roomMessagePayload.RoomID, roomMessagePayload.EncryptedText)
+				log.Printf("Message from %s in room %s: %s", roomMessagePayload.FromUsername, roomMessagePayload.RoomID, roomMessagePayload.EncryptedText)
 				continue
 			}
 			roomMessageChan <- message.Payload

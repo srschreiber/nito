@@ -304,7 +304,7 @@ func sayCmd(args []Argument) (string, error) {
 
 	payload, err := json.Marshal(wstypes.RoomMessagePayload{
 		RoomID:        roomID,
-		FromUserID:    s.UserID,
+		FromUsername:  s.UserID,
 		EncryptedText: base64.StdEncoding.EncodeToString(ciphertext),
 	})
 	if err != nil {

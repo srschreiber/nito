@@ -226,7 +226,7 @@ func waitRoomMessages() tea.Cmd {
 		// TODO: Pass per-user message count to enable ratcheting. Currently always nil,
 		// which reuses the same base key for every message. To add forward secrecy,
 		// track a per-(room, sender) receive counter and pass it here, incrementing after each message.
-		plaintext, err := keys.DecryptMessageWithRoomKey(ciphertext, payload.FromUserID, roomKey, nil)
+		plaintext, err := keys.DecryptMessageWithRoomKey(ciphertext, payload.FromUsername, roomKey, nil)
 		if err != nil {
 			fmt.Printf("waitRoomMessages: decrypt message: %v\n", err)
 			return roomMessageWsMsg{}
@@ -291,7 +291,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		cmds = append(cmds, waitRoomMessages())
 		if m.selectedRoomID != nil && msg.RoomID == *m.selectedRoomID {
-			text := fmt.Sprintf("[%s]: %s", msg.FromUserID, msg.EncryptedText)
+			text := fmt.Sprintf("[%s]: %s", msg.FromUsername, msg.EncryptedText)
 			cmds = append(cmds, func() tea.Msg { return components.NewResponseAppendMsg(text) })
 		}
 		return m, tea.Batch(cmds...)

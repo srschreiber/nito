@@ -1,4 +1,4 @@
-create table if not exists room_message (
+create table if not exists room_messages (
     room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
     key_version_num INTEGER NOT NULL,
     sender_message_count INTEGER NOT NULL DEFAULT 0, -- this is given by the client

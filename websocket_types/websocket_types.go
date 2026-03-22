@@ -49,7 +49,7 @@ type RoomMessagePayload struct {
 	RoomID             string `json:"roomId" validate:"required"`
 	RoomKeyVersion     int    `json:"roomKeyVersion" validate:"required" description:"the version, or epoch, of the room key used to encrypt this message"`
 	SenderMessageCount int    `json:"senderMessageCount" validate:"required" description:"a strictly increasing count of messages sent by this user in this room for encryption key generation purposes."`
-	FromUserID         string `json:"fromUserId" validate:"required"`
+	FromUsername       string `json:"fromUsername" validate:"required"`
 	EncryptedText      string `json:"encryptedText" validate:"required"`
 }
 
