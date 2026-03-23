@@ -25,7 +25,8 @@ For tracking what I plan on doing next time I work on this.
 7. mark room idle
 8. notify clients that new key is available
 9. grace window for old key messages that were in flight before key rotation, where in flight means reached broker but not yet processed
-   10. once notification is sent to change keys, grace time will start (only 5 seconds)
+   - once notification is sent to change keys, grace time will start (only 5 seconds)
+   - handled by sendRoomMessage
 
 nice to haves:
 - add sem version so client can check if it's compatible with the server before making requests, o.w. exit with error to update

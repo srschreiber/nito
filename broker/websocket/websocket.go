@@ -30,12 +30,12 @@ type Client struct {
 }
 
 type Broker struct {
-	Address   string
-	db        *pgxpool.Pool
-	upgrader  websocket.Upgrader
-	mu        sync.RWMutex
-	clientMap map[string]*Client
-	outbound  *message_delivery.OutboundRoomMessages
+	Address          string
+	db               *pgxpool.Pool
+	upgrader         websocket.Upgrader
+	mu               sync.RWMutex
+	clientMap        map[string]*Client
+	inflightMessages *message_delivery.InFlightMessageWriter
 }
 
 // trySend attempts a non-blocking send to the client's send channel.
@@ -58,11 +58,11 @@ func NewBroker(ctx context.Context, address string, db *pgxpool.Pool) *Broker {
 	outbound := message_delivery.NewOutboundRoomMessages(ctx, db)
 	outbound.Start()
 	return &Broker{
-		Address:   address,
-		db:        db,
-		clientMap: make(map[string]*Client),
-		upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		outbound:  outbound,
+		Address:          address,
+		db:               db,
+		clientMap:        make(map[string]*Client),
+		upgrader:         websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		inflightMessages: outbound,
 	}
 }
 

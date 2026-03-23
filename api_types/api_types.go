@@ -82,6 +82,7 @@ type AcceptInviteRequest struct {
 
 type GetRoomKeyResponse struct {
 	EncryptedRoomKey string `json:"encryptedRoomKey"`
+	KeyVersion       int    `json:"keyVersion"`
 }
 
 type GetUserPublicKeyResponse struct {

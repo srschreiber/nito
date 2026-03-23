@@ -13,6 +13,7 @@ import (
 	"github.com/srschreiber/nito/shellapp/keys"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
+	"github.com/srschreiber/nito/utils"
 	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
@@ -208,12 +209,15 @@ func waitRoomMessages() tea.Cmd {
 			return roomMessageWsMsg{}
 		}
 
-		encRoomKey, err := connection.GetMyRoomKey(payload.RoomID)
-		if err != nil {
-			fmt.Printf("waitRoomMessages: get room key: %v\n", err)
-			return roomMessageWsMsg{}
+		encRoomKey := connection.GetSessionEncryptedRoomKey()
+		if encRoomKey == nil {
+			fmt.Printf("waitRoomMessages: no encrypted room key in session\n")
+			return types.ErrorMsg{
+				Message: "Received room message but no room key available in session",
+			}
 		}
-		roomKey, err := keys.DecryptRoomKey(encRoomKey)
+
+		roomKey, err := keys.DecryptRoomKey(utils.DerefOrZero(encRoomKey))
 		if err != nil {
 			fmt.Printf("waitRoomMessages: decrypt room key: %v\n", err)
 			return roomMessageWsMsg{}
@@ -319,6 +323,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			return m, m.comps[m.focusable[m.focusedComponent]].Update(msg)
 		}
+	case types.ErrorMsg:
+		text := fmt.Sprintf("error: %s", msg.Message)
+		return m, func() tea.Msg { return components.NewResponseAppendMsg(text) }
 	default:
 		// Broadcast non-key messages to all components.
 		var cmds []tea.Cmd

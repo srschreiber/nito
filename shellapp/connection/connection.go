@@ -18,9 +18,10 @@ import (
 )
 
 type Session struct {
-	UserID    string // username (used as the identity token sent to the broker)
-	BrokerURL string
-	RoomID    *string // currently selected room
+	UserID           string // username (used as the identity token sent to the broker)
+	BrokerURL        string
+	RoomID           *string // currently selected room
+	EncryptedRoomKey *string // encrypted with pub key
 }
 
 var (
@@ -311,23 +312,48 @@ func BrokerURL() string {
 	return session.BrokerURL
 }
 
-// SetCurrentRoom stores the selected room ID in the session.
-func SetCurrentRoom(roomID string) {
+// SetSessionRoom stores the selected room ID in the session.
+func SetSessionRoom(roomID string) error {
+	mu.Lock()
+	if session == nil {
+		mu.Unlock()
+		return fmt.Errorf("not connected")
+	}
+	mu.Unlock()
+
+	// fetch the room key outside the lock to avoid deadlock (getMyRoomKey calls CurrentSession which also locks mu)
+	rk, err := getMyRoomKey(roomID)
+	if err != nil {
+		return fmt.Errorf("room-select: retrieve room key failed: %w", err)
+	}
+
 	mu.Lock()
 	defer mu.Unlock()
-	if session != nil {
-		session.RoomID = &roomID
+	if session == nil {
+		return fmt.Errorf("not connected")
 	}
+	session.RoomID = &roomID
+	session.EncryptedRoomKey = &rk
+	return nil
 }
 
-// GetCurrentRoomID returns the currently selected room ID, or nil if none selected.
-func GetCurrentRoomID() *string {
+// GetSessionRoomID returns the currently selected room ID, or nil if none selected.
+func GetSessionRoomID() *string {
 	mu.Lock()
 	defer mu.Unlock()
 	if session == nil {
 		return nil
 	}
 	return session.RoomID
+}
+
+func GetSessionEncryptedRoomKey() *string {
+	mu.Lock()
+	defer mu.Unlock()
+	if session == nil {
+		return nil
+	}
+	return session.EncryptedRoomKey
 }
 
 // GetUserPublicKey fetches the public key PEM for a given username from the broker.
@@ -353,8 +379,8 @@ func GetUserPublicKey(username string) (string, error) {
 	return result.PublicKey, nil
 }
 
-// GetMyRoomKey fetches the caller's encrypted room key for the given room.
-func GetMyRoomKey(roomID string) (string, error) {
+// getMyRoomKey fetches the caller's encrypted room key for the given room.
+func getMyRoomKey(roomID string) (string, error) {
 	s := CurrentSession()
 	if s == nil {
 		return "", errors.New("not connected")

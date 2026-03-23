@@ -85,13 +85,13 @@ func (h *Handler) getRoomKey(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing room_id", http.StatusBadRequest)
 		return
 	}
-	key, err := h.broker.BrokerGetRoomKey(r.Context(), userID, roomID)
+	key, v, err := h.broker.BrokerGetRoomKey(r.Context(), userID, roomID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(apitypes.GetRoomKeyResponse{EncryptedRoomKey: key})
+	json.NewEncoder(w).Encode(apitypes.GetRoomKeyResponse{EncryptedRoomKey: key, KeyVersion: v})
 }
 
 func (h *Handler) listPendingInvites(w http.ResponseWriter, r *http.Request) {

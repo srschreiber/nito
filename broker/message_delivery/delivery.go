@@ -8,24 +8,24 @@ import (
 )
 import db "github.com/srschreiber/nito/broker/database"
 
-// OutboundRoomMessages collects messages that need to be inserted into the database, allowing
+// InFlightMessageWriter collects messages that need to be inserted into the database, allowing
 // routing to user's specific channels to make sure that database insertions will not block delivery.
 // since there is only one broker, this will also guarantee delivery order.
-type OutboundRoomMessages struct {
+type InFlightMessageWriter struct {
 	outboundMessageChan chan wstypes.RoomMessagePayload
 	conn                db.Conn
 	ctx                 context.Context
 }
 
-func NewOutboundRoomMessages(ctx context.Context, conn db.Conn) *OutboundRoomMessages {
-	return &OutboundRoomMessages{
+func NewOutboundRoomMessages(ctx context.Context, conn db.Conn) *InFlightMessageWriter {
+	return &InFlightMessageWriter{
 		outboundMessageChan: make(chan wstypes.RoomMessagePayload, 250),
 		conn:                conn,
 		ctx:                 ctx,
 	}
 }
 
-func (o *OutboundRoomMessages) Enqueue(payload wstypes.RoomMessagePayload) {
+func (o *InFlightMessageWriter) Enqueue(payload wstypes.RoomMessagePayload) {
 	// non-blocking send to the channel, dropping messages if the channel is full to avoid blocking delivery
 	select {
 	case o.outboundMessageChan <- payload:
@@ -34,7 +34,7 @@ func (o *OutboundRoomMessages) Enqueue(payload wstypes.RoomMessagePayload) {
 	}
 }
 
-func (o *OutboundRoomMessages) Start() {
+func (o *InFlightMessageWriter) Start() {
 	// starts a goroutine to read from the channel and insert messages into the database
 	go func() {
 		for {

@@ -24,3 +24,7 @@ type RoomMembersUpdatedMsg struct {
 type RoomMembersFetchMsg struct {
 	RoomID string
 }
+
+type ErrorMsg struct {
+	Message string
+}

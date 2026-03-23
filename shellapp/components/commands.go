@@ -210,7 +210,7 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 			func() tea.Msg { return types.ConnectedMsg{} },
 		)
 	case commands.SignalRoomSelected:
-		roomID := connection.GetCurrentRoomID()
+		roomID := connection.GetSessionRoomID()
 		if roomID == nil {
 			break
 		}

@@ -58,7 +58,7 @@ func sayCmd(args []Argument) (string, error) {
 	if s == nil {
 		return "", errors.New("say: not connected (use connect first)")
 	}
-	roomID := utils.DerefOrZero(connection.GetCurrentRoomID())
+	roomID := utils.DerefOrZero(connection.GetSessionRoomID())
 	if roomID == "" {
 		return "", errors.New("say: no room selected (use room-select first)")
 	}
@@ -67,11 +67,12 @@ func sayCmd(args []Argument) (string, error) {
 		return "", errors.New("say: -m/--message <text> is required")
 	}
 
-	encRoomKey, err := connection.GetMyRoomKey(roomID)
-	if err != nil {
-		return "", fmt.Errorf("say: get room key: %w", err)
+	encRoomKey := connection.GetSessionEncryptedRoomKey()
+	if encRoomKey == nil {
+		return "", errors.New("say: no room key available for selected room")
 	}
-	roomKey, err := keys.DecryptRoomKey(encRoomKey)
+
+	roomKey, err := keys.DecryptRoomKey(utils.DerefOrZero(encRoomKey))
 	if err != nil {
 		return "", fmt.Errorf("say: decrypt room key: %w", err)
 	}

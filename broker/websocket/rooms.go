@@ -93,11 +93,20 @@ func (b *Broker) notifyMembersUpdated(userID string) {
 	}
 }
 
+// sendRoomMessage processes inflight room messages
 func (b *Broker) sendRoomMessage(client *Client, message wstypes.ToBrokerWsMessage) error {
+	receivedTime := time.Now()
+	_ = receivedTime
+
 	var payload wstypes.RoomMessagePayload
 	if err := json.Unmarshal(message.Payload, &payload); err != nil {
 		return fmt.Errorf("unmarshal room_message payload: %w", err)
 	}
+
+	// TODO: verify payload.KeyVersion matches the room's current key version at broker receipt time.
+	// If stale at received time, reject.
+	// If accepted here and rotation happens immediately after, still allow the message to finish
+	// processing and be stored under the old key version, since it was already in flight.
 
 	members, err := database.ListRoomMembers(context.Background(), b.db, payload.RoomID)
 	if err != nil {
@@ -137,7 +146,7 @@ func (b *Broker) sendRoomMessage(client *Client, message wstypes.ToBrokerWsMessa
 		toClient.trySend(data)
 	}
 
-	b.outbound.Enqueue(payload)
+	b.inflightMessages.Enqueue(payload)
 	return nil
 }
 
@@ -206,12 +215,12 @@ func (b *Broker) BrokerAcceptInvite(ctx context.Context, userID, roomID string) 
 }
 
 // BrokerGetRoomKey returns the user's encrypted room key for a given room.
-func (b *Broker) BrokerGetRoomKey(ctx context.Context, userID, roomID string) (string, error) {
+func (b *Broker) BrokerGetRoomKey(ctx context.Context, userID, roomID string) (string, int, error) {
 	key, err := database.GetUserRoomKey(ctx, b.db, userID, roomID)
 	if err != nil {
-		return "", err
+		return "", -1, err
 	}
-	return key.EncryptedRoomKey, nil
+	return key.EncryptedRoomKey, key.RoomKeyVersionNum, nil
 }
 
 // BrokerGetUserPublicKey returns the public key PEM for the given username.

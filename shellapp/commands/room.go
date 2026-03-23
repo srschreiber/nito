@@ -74,40 +74,50 @@ func roomSelectCmd(args []Argument) (string, Signal, error) {
 	if len(matched) > 1 {
 		return "", SignalNone, fmt.Errorf("room-select: ambiguous: %d rooms match %q", len(matched), query)
 	}
-	connection.SetCurrentRoom(matched[0])
+
+	err = connection.SetSessionRoom(matched[0])
+	if err != nil {
+		return "", SignalNone, fmt.Errorf("room-select: set current room failed: %w", err)
+	}
+
 	return fmt.Sprintf("selected room %s", matched[0]), SignalRoomSelected, nil
 }
 
+// TODO: see the todo.txt. we will not assign a key until users join
 func roomInviteCmd(args []Argument) (string, error) {
 	username := extractArg(args, "u", "user")
 	if username == "" {
 		return "", errors.New("room-invite: -u/--user <username> is required")
 	}
-	roomID := utils.DerefOrZero(connection.GetCurrentRoomID())
+	roomID := utils.DerefOrZero(connection.GetSessionRoomID())
 	if roomID == "" {
 		return "", errors.New("room-invite: no room selected (use room-select or select in UI)")
 	}
 
-	// Fetch our own encrypted room key, decrypt it, then re-encrypt for the invitee.
-	encryptedKey, err := connection.GetMyRoomKey(roomID)
-	if err != nil {
-		return "", fmt.Errorf("room-invite: fetch room key: %w", err)
+	encryptedKey := connection.GetSessionEncryptedRoomKey()
+	if encryptedKey == nil {
+		return "", errors.New("room-invite: no encrypted room key in session")
 	}
-	roomKey, err := keys.DecryptRoomKey(encryptedKey)
+
+	roomKey, err := keys.DecryptRoomKey(utils.DerefOrZero(encryptedKey))
 	if err != nil {
 		return "", fmt.Errorf("room-invite: decrypt room key: %w", err)
 	}
+
 	inviteePub, err := connection.GetUserPublicKey(username)
 	if err != nil {
 		return "", fmt.Errorf("room-invite: get invitee public key: %w", err)
 	}
+
 	encryptedForInvitee, err := keys.EncryptRoomKeyForPEM(roomKey, inviteePub)
 	if err != nil {
 		return "", fmt.Errorf("room-invite: encrypt for invitee: %w", err)
 	}
+
 	if err := connection.InviteUser(roomID, username, encryptedForInvitee); err != nil {
 		return "", err
 	}
+
 	return fmt.Sprintf("invited %s to room %s", username, roomID), nil
 }
 
