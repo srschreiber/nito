@@ -223,6 +223,15 @@ func (b *Broker) BrokerGetRoomKey(ctx context.Context, userID, roomID string) (s
 	return key.EncryptedRoomKey, key.RoomKeyVersionNum, nil
 }
 
+// BrokerGetRoomInfo returns room info for the given user in the given room.
+func (b *Broker) BrokerGetRoomInfo(ctx context.Context, userID, roomID string) (*apitypes.GetRoomInfoResponse, error) {
+	count, err := database.GetUserSentMessageCount(ctx, b.db, roomID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &apitypes.GetRoomInfoResponse{SentMessageCount: count}, nil
+}
+
 // BrokerGetUserPublicKey returns the public key PEM for the given username.
 func (b *Broker) BrokerGetUserPublicKey(ctx context.Context, username string) (string, error) {
 	pub, err := database.GetUserPublicKeyByUsername(ctx, b.db, username)

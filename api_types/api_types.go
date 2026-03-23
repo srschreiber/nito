@@ -88,3 +88,14 @@ type GetRoomKeyResponse struct {
 type GetUserPublicKeyResponse struct {
 	PublicKey string `json:"publicKey"`
 }
+
+type GetRoomInfoResponse struct {
+	// SentMessageCount is the total number of messages this user has sent in this room.
+	// It is used as a strictly increasing counter for encryption key derivation (ratcheting).
+	//
+	// TODO: Will also include:
+	//   - Historic messages for catch-up on reconnect
+	//   - Per-member sent message counts, needed to derive decryption keys via the
+	//     key-chain ratchet (each member's count advances their own ratchet state)
+	SentMessageCount int `json:"sentMessageCount"`
+}

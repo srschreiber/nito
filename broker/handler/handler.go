@@ -30,6 +30,7 @@ func (h *Handler) Register() {
 	http.HandleFunc("/api/v0/rooms/invite", withSignature(h.pool, withValidation(h.inviteUser)))
 	http.HandleFunc("/api/v0/rooms/members", withSignature(h.pool, h.listRoomMembers))
 	http.HandleFunc("/api/v0/rooms/key", withSignature(h.pool, h.getRoomKey))
+	http.HandleFunc("/api/v0/rooms/info", withSignature(h.pool, h.getRoomInfo))
 	http.HandleFunc("/api/v0/rooms/invites", withSignature(h.pool, h.listPendingInvites))
 	http.HandleFunc("/api/v0/rooms/invites/accept", withSignature(h.pool, withValidation(h.acceptInvite)))
 	http.HandleFunc("/api/v0/users/public-key", h.getUserPublicKey)

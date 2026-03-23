@@ -71,23 +71,28 @@ func sayCmd(args []Argument) (string, error) {
 	if encRoomKey == nil {
 		return "", errors.New("say: no room key available for selected room")
 	}
+	roomKeyVersion := utils.DerefOrZero(connection.GetSessionRoomKeyVersion())
+
+	roomInfo := connection.GetSessionRoomInfo()
+	if roomInfo == nil {
+		return "", errors.New("say: no room info available for selected room")
+	}
 
 	roomKey, err := keys.DecryptRoomKey(utils.DerefOrZero(encRoomKey))
 	if err != nil {
 		return "", fmt.Errorf("say: decrypt room key: %w", err)
 	}
-	// TODO: Pass per-user message count to enable ratcheting. Currently always nil,
-	// which reuses the same base key for every message. To add forward secrecy,
-	// maintain a per-room send counter and pass it here, incrementing after each send.
 	ciphertext, err := keys.EncryptMessageWithRoomKey([]byte(text), s.UserID, roomKey, nil)
 	if err != nil {
 		return "", fmt.Errorf("say: encrypt: %w", err)
 	}
 
 	payload, err := json.Marshal(wstypes.RoomMessagePayload{
-		RoomID:        roomID,
-		FromUsername:  s.UserID,
-		EncryptedText: base64.StdEncoding.EncodeToString(ciphertext),
+		RoomID:             roomID,
+		RoomKeyVersion:     roomKeyVersion,
+		SenderMessageCount: roomInfo.SentMessageCount,
+		FromUsername:       s.UserID,
+		EncryptedText:      base64.StdEncoding.EncodeToString(ciphertext),
 	})
 	if err != nil {
 		return "", fmt.Errorf("say: %w", err)
@@ -112,5 +117,6 @@ func sayCmd(args []Argument) (string, error) {
 	if err := connection.Send(data); err != nil {
 		return "", fmt.Errorf("say: send: %w", err)
 	}
+	connection.IncrementSessionSentMessageCount()
 	return "", nil
 }

@@ -114,6 +114,27 @@ func (h *Handler) listPendingInvites(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(apitypes.ListPendingInvitesResponse{Invites: invites})
 }
 
+func (h *Handler) getRoomInfo(w http.ResponseWriter, r *http.Request) {
+	username := r.Header.Get("X-Username")
+	userID := h.broker.LookupUserIDByUsername(r.Context(), username)
+	if userID == "" {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+	roomID := r.URL.Query().Get("room_id")
+	if roomID == "" {
+		http.Error(w, "missing room_id", http.StatusBadRequest)
+		return
+	}
+	info, err := h.broker.BrokerGetRoomInfo(r.Context(), userID, roomID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
+}
+
 func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request, req apitypes.AcceptInviteRequest) {
 	username := r.Header.Get("X-Username")
 	userID := h.broker.LookupUserIDByUsername(r.Context(), username)

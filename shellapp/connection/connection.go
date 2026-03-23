@@ -17,11 +17,20 @@ import (
 	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
+// RoomInfo holds per-room state fetched on room selection and updated locally.
+type RoomInfo struct {
+	// SentMessageCount is the number of messages this user has sent in this room.
+	// Incremented locally after each successful send; used as the ratchet counter for encryption.
+	SentMessageCount int
+}
+
 type Session struct {
 	UserID           string // username (used as the identity token sent to the broker)
 	BrokerURL        string
-	RoomID           *string // currently selected room
-	EncryptedRoomKey *string // encrypted with pub key
+	RoomID           *string   // currently selected room
+	EncryptedRoomKey *string   // encrypted with pub key
+	RoomKeyVersion   *int      // key version for the current room's key
+	RoomInfo         *RoomInfo // info about this user's activity in the selected room
 }
 
 var (
@@ -312,7 +321,7 @@ func BrokerURL() string {
 	return session.BrokerURL
 }
 
-// SetSessionRoom stores the selected room ID in the session.
+// SetSessionRoom stores the selected room ID in the session, fetching the room key and room info.
 func SetSessionRoom(roomID string) error {
 	mu.Lock()
 	if session == nil {
@@ -321,10 +330,15 @@ func SetSessionRoom(roomID string) error {
 	}
 	mu.Unlock()
 
-	// fetch the room key outside the lock to avoid deadlock (getMyRoomKey calls CurrentSession which also locks mu)
-	rk, err := getMyRoomKey(roomID)
+	// Fetch room key and room info outside the lock to avoid deadlock
+	// (both call CurrentSession which also locks mu).
+	rk, kv, err := getMyRoomKey(roomID)
 	if err != nil {
 		return fmt.Errorf("room-select: retrieve room key failed: %w", err)
+	}
+	info, err := getRoomInfo(roomID)
+	if err != nil {
+		return fmt.Errorf("room-select: retrieve room info failed: %w", err)
 	}
 
 	mu.Lock()
@@ -334,6 +348,8 @@ func SetSessionRoom(roomID string) error {
 	}
 	session.RoomID = &roomID
 	session.EncryptedRoomKey = &rk
+	session.RoomKeyVersion = &kv
+	session.RoomInfo = info
 	return nil
 }
 
@@ -354,6 +370,35 @@ func GetSessionEncryptedRoomKey() *string {
 		return nil
 	}
 	return session.EncryptedRoomKey
+}
+
+func GetSessionRoomKeyVersion() *int {
+	mu.Lock()
+	defer mu.Unlock()
+	if session == nil {
+		return nil
+	}
+	return session.RoomKeyVersion
+}
+
+// GetSessionRoomInfo returns a copy of the current room info, or nil if no room is selected.
+func GetSessionRoomInfo() *RoomInfo {
+	mu.Lock()
+	defer mu.Unlock()
+	if session == nil || session.RoomInfo == nil {
+		return nil
+	}
+	copy := *session.RoomInfo
+	return &copy
+}
+
+// IncrementSessionSentMessageCount atomically increments the sent message counter for the selected room.
+func IncrementSessionSentMessageCount() {
+	mu.Lock()
+	defer mu.Unlock()
+	if session != nil && session.RoomInfo != nil {
+		session.RoomInfo.SentMessageCount++
+	}
 }
 
 // GetUserPublicKey fetches the public key PEM for a given username from the broker.
@@ -379,11 +424,11 @@ func GetUserPublicKey(username string) (string, error) {
 	return result.PublicKey, nil
 }
 
-// getMyRoomKey fetches the caller's encrypted room key for the given room.
-func getMyRoomKey(roomID string) (string, error) {
+// getMyRoomKey fetches the caller's encrypted room key and key version for the given room.
+func getMyRoomKey(roomID string) (encryptedKey string, keyVersion int, err error) {
 	s := CurrentSession()
 	if s == nil {
-		return "", errors.New("not connected")
+		return "", 0, errors.New("not connected")
 	}
 	resp, err := signedGet(
 		"http://"+s.BrokerURL+"/api/v0/rooms/key?room_id="+roomID,
@@ -391,19 +436,42 @@ func getMyRoomKey(roomID string) (string, error) {
 		"/api/v0/rooms/key",
 	)
 	if err != nil {
-		return "", fmt.Errorf("get room key: %w", err)
+		return "", 0, fmt.Errorf("get room key: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("get room key: broker returned %s", resp.Status)
+		return "", 0, fmt.Errorf("get room key: broker returned %s", resp.Status)
 	}
-	var result struct {
-		EncryptedRoomKey string `json:"encryptedRoomKey"`
-	}
+	var result apitypes.GetRoomKeyResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("get room key: decode: %w", err)
+		return "", 0, fmt.Errorf("get room key: decode: %w", err)
 	}
-	return result.EncryptedRoomKey, nil
+	return result.EncryptedRoomKey, result.KeyVersion, nil
+}
+
+// getRoomInfo fetches the caller's room info (e.g. sent message count) for the given room.
+func getRoomInfo(roomID string) (*RoomInfo, error) {
+	s := CurrentSession()
+	if s == nil {
+		return nil, errors.New("not connected")
+	}
+	resp, err := signedGet(
+		"http://"+s.BrokerURL+"/api/v0/rooms/info?room_id="+roomID,
+		s.UserID,
+		"/api/v0/rooms/info",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get room info: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get room info: broker returned %s", resp.Status)
+	}
+	var result apitypes.GetRoomInfoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("get room info: decode: %w", err)
+	}
+	return &RoomInfo{SentMessageCount: result.SentMessageCount}, nil
 }
 
 // InviteUser invites a user to a room, sending their encrypted copy of the room key.
