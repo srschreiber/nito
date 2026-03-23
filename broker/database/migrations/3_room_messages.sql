@@ -6,5 +6,7 @@ create table if not exists room_messages (
     encrypted_text TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (room_id, sender_user_id, key_version_num, sender_message_count)
+    -- maybe include the count in pk in the future, but for now accept there may be duplicates
+    -- which means multiple messages could theoretically have the same encryption key
+    PRIMARY KEY (room_id, sender_user_id, key_version_num)
 );
