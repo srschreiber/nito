@@ -110,7 +110,7 @@ func Connect(brokerURL, userID string) error {
 	nc := make(chan []byte, 16)
 	echoChan = make(chan []byte, 16)
 	conn = c
-	session = &Session{UserID: userID, BrokerURL: brokerURL}
+	session = &Session{UserID: userID, BrokerURL: brokerURL, KeyManager: map[string]*keys.RoomKeyChain{}}
 	notifChan = nc
 
 	go readLoop(c, echoChan, roomMessageChan, nc)
