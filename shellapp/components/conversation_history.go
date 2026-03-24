@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/srschreiber/nito/shellapp/styles"
 )
 
@@ -25,17 +25,21 @@ type ClearHistoryMsg struct{}
 // JumpScrollMsg requests that the history viewport jump to a specific line (1-indexed from top).
 type JumpScrollMsg struct{ Line int }
 
+// ModeChangedMsg is emitted when the command input switches between command and chat mode.
+type ModeChangedMsg struct{ ChatMode bool }
+
 // NewResponseAppendMsg builds an AppendHistoryMsg for a single server-response entry.
 func NewResponseAppendMsg(text string) AppendHistoryMsg {
 	return AppendHistoryMsg{Entries: []historyEntry{{text: text, isResponse: true}}}
 }
 
 type ConversationHistory struct {
-	entries []historyEntry
-	scroll  int // lines scrolled up from the bottom (0 = pinned to bottom)
-	focused bool
-	width   int // content width passed from layout (lipgloss Width value)
-	height  int // content height passed from layout (lipgloss Height value)
+	entries  []historyEntry
+	scroll   int // lines scrolled up from the bottom (0 = pinned to bottom)
+	focused  bool
+	chatMode bool
+	width    int // content width passed from layout (lipgloss Width value)
+	height   int // content height passed from layout (lipgloss Height value)
 }
 
 func NewConversationHistory(width, height int) *ConversationHistory {
@@ -135,6 +139,8 @@ func (h *ConversationHistory) Update(msg tea.Msg) tea.Cmd {
 	case ClearHistoryMsg:
 		h.entries = nil
 		h.scroll = 0
+	case ModeChangedMsg:
+		h.chatMode = msg.ChatMode
 	case JumpScrollMsg:
 		lines := h.allLines()
 		total := len(lines)
@@ -183,8 +189,16 @@ func (h *ConversationHistory) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (h *ConversationHistory) Render() string {
-	// Fixed first row: title.
-	rows := []string{styles.SectionTitleStyle.Render("Commands")}
+	// Fixed first row: title with mode badge.
+	var badge, title string
+	if h.chatMode {
+		badge = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true).Render("[chat]")
+		title = styles.SectionTitleStyle.Render("Chat")
+	} else {
+		badge = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("[cmd]")
+		title = styles.SectionTitleStyle.Render("Shell")
+	}
+	rows := []string{badge + " " + title}
 
 	if len(h.entries) == 0 {
 		rows = append(rows, styles.Grey.Render("No messages yet."))

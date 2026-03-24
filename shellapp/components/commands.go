@@ -185,22 +185,28 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 	if input == "/chat" {
 		l.chatMode = true
 		l.Placeholder = placeholderChat
-		return func() tea.Msg {
-			return AppendHistoryMsg{Entries: []historyEntry{
-				{text: "> " + input},
-				{text: "Switched to chat mode. Type messages and press enter to send.", isResponse: true},
-			}}
-		}
+		return tea.Batch(
+			func() tea.Msg {
+				return AppendHistoryMsg{Entries: []historyEntry{
+					{text: "> " + input},
+					{text: "Switched to chat mode. Type messages and press enter to send.", isResponse: true},
+				}}
+			},
+			func() tea.Msg { return ModeChangedMsg{ChatMode: true} },
+		)
 	}
 	if input == "/cmd" {
 		l.chatMode = false
 		l.Placeholder = placeholderCmd
-		return func() tea.Msg {
-			return AppendHistoryMsg{Entries: []historyEntry{
-				{text: "> " + input},
-				{text: "Switched to command mode.", isResponse: true},
-			}}
-		}
+		return tea.Batch(
+			func() tea.Msg {
+				return AppendHistoryMsg{Entries: []historyEntry{
+					{text: "> " + input},
+					{text: "Switched to command mode.", isResponse: true},
+				}}
+			},
+			func() tea.Msg { return ModeChangedMsg{ChatMode: false} },
+		)
 	}
 
 	// In chat mode, plain input is sent as a room message.

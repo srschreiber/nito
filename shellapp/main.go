@@ -32,6 +32,7 @@ type layout struct {
 	histW, histH   int
 	roomsW, roomsH int
 	membersW       int // 0 when no room is selected
+	hintsW, hintsH int
 	statW, statH   int
 	cmdW           int
 }
@@ -57,10 +58,20 @@ func computeLayout(termW, termH int, showMembers bool) layout {
 
 	rightBoxW := usableW - histBoxW
 
-	// Split the right column: rooms 85%, status 15%.
-	roomsBoxH := int(float64(histBoxH) * 0.85)
-	statBoxH := histBoxH - roomsBoxH
+	// Split the right column: rooms ~55%, hints ~25%, status remainder.
+	// hintsH and statH intentionally omit overhead subtraction (same pattern as original statH)
+	// so the right column total matches history height.
+	roomsBoxH := int(float64(histBoxH) * 0.55)
+	hintsBoxH := int(float64(histBoxH) * 0.25)
+	if hintsBoxH < 6 {
+		hintsBoxH = 6
+	}
+	statBoxH := histBoxH - roomsBoxH - hintsBoxH
+	if statBoxH < 3 {
+		statBoxH = 3
+	}
 	roomsH := roomsBoxH - histBoxOverheadH
+	hintsH := hintsBoxH
 	statH := statBoxH
 
 	var roomsW, membersW int
@@ -72,6 +83,7 @@ func computeLayout(termW, termH int, showMembers bool) layout {
 		roomsW = rightBoxW - rightBoxOverheadW
 		membersW = 0
 	}
+	hintsW := rightBoxW - rightBoxOverheadW
 	statW := rightBoxW - rightBoxOverheadW
 
 	cmdW := usableW - cmdBoxOverheadW
@@ -105,7 +117,8 @@ func computeLayout(termW, termH int, showMembers bool) layout {
 		histW: histW, histH: histH,
 		roomsW: roomsW, roomsH: roomsH,
 		membersW: membersW,
-		statW:    statW, statH: statH,
+		hintsW:   hintsW, hintsH: hintsH,
+		statW: statW, statH: statH,
 		cmdW: cmdW,
 	}
 }
@@ -116,6 +129,7 @@ type model struct {
 	members          *components.RoomMembersComponent
 	status           *components.StatusComponent
 	command          *components.CommandComponent
+	hints            *components.HintsComponent
 	comps            []components.Component
 	focusable        []int
 	focusedComponent int
@@ -131,21 +145,24 @@ func initialModel() model {
 	members := components.NewRoomMembersComponent(l.membersW, l.roomsH)
 	status := components.NewStatusComponent(l.statW, l.statH)
 	command := components.NewCommandComponent(l.cmdW)
+	hints := components.NewHintsComponent(l.hintsW, l.hintsH)
 
-	// comps: 0=history, 1=rooms, 2=members (display-only), 3=status (display-only), 4=command
+	// comps: 0=history, 1=rooms, 2=members (display-only), 3=status (display-only), 4=command, 5=hints (display-only)
 	m := model{
 		history:          history,
 		rooms:            rooms,
 		members:          members,
 		status:           status,
 		command:          command,
-		comps:            []components.Component{history, rooms, members, status, command},
+		hints:            hints,
+		comps:            []components.Component{history, rooms, members, status, command, hints},
 		focusable:        []int{0, 1, 4},
 		focusedComponent: 2, // index into focusable → comps[4] = command
 		termW:            termW,
 		termH:            termH,
 	}
 	m.comps[m.focusable[m.focusedComponent]].SetFocused(true)
+	m.hints.SetFocusedComp(m.focusable[m.focusedComponent])
 	return m
 }
 
@@ -155,6 +172,7 @@ func (m *model) relayout(termW, termH int) {
 	m.history.SetSize(l.histW, l.histH)
 	m.rooms.SetSize(l.roomsW, l.roomsH)
 	m.members.SetSize(l.membersW, l.roomsH)
+	m.hints.SetSize(l.hintsW, l.hintsH)
 	m.status.SetSize(l.statW, l.statH)
 	m.command.SetWidth(l.cmdW)
 }
@@ -307,6 +325,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.comps[m.focusable[m.focusedComponent]].SetFocused(false)
 			m.focusedComponent = (m.focusedComponent + 1) % len(m.focusable)
 			m.comps[m.focusable[m.focusedComponent]].SetFocused(true)
+			m.hints.SetFocusedComp(m.focusable[m.focusedComponent])
 			return m, nil
 		default:
 			return m, m.comps[m.focusable[m.focusedComponent]].Update(msg)
@@ -333,13 +352,12 @@ func (m model) View() tea.View {
 		topRightParts = append(topRightParts, m.members.Render())
 	}
 	topRight := lipgloss.JoinHorizontal(lipgloss.Top, topRightParts...)
-	rightCol := lipgloss.JoinVertical(lipgloss.Left, topRight, m.status.Render())
+	rightCol := lipgloss.JoinVertical(lipgloss.Left, topRight, m.hints.Render(), m.status.Render())
 	topRow := lipgloss.JoinHorizontal(lipgloss.Top, m.history.Render(), rightCol)
 	s := topRow + "\n" + m.command.Render()
 
-	footerText := ""
-	rem := types.ShellWrapWidth - len([]rune(footerText))
-	s += "\n" + styles.HelpStyle.Render(footerText+fmt.Sprintf("%*s", rem, " "))
+	footer := styles.HelpStyle.Render("  tab  switch focus  •  ctrl+c  quit")
+	s += "\n" + footer
 
 	return tea.NewView(styles.AppStyle.Render(s))
 }
