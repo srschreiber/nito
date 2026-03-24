@@ -53,6 +53,13 @@ func echoCmd(args []Argument) (string, error) {
 	return "", nil
 }
 
+// SendRoomMessage sends text to the currently selected room without going through the command parser.
+// Used by chat mode so raw input can be sent directly.
+func SendRoomMessage(text string) error {
+	_, err := sayCmd([]Argument{{Name: "m", Values: []string{text}, Type: ArgumentShortForm}})
+	return err
+}
+
 func sayCmd(args []Argument) (string, error) {
 	s := connection.CurrentSession()
 	if s == nil {

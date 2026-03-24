@@ -15,9 +15,15 @@ const maxCmdHistory = 20
 
 type cursorBlinkMsg struct{ gen int }
 
+const (
+	placeholderCmd  = "Type a command... (try: wcid)"
+	placeholderChat = "Chat (/cmd to return to command mode)"
+)
+
 type CommandComponent struct {
 	Placeholder    string
 	focused        bool
+	chatMode       bool
 	textFieldValue string
 	cursorPos      int
 	cursorVisible  bool
@@ -31,7 +37,7 @@ type CommandComponent struct {
 
 func NewCommandComponent(width int) *CommandComponent {
 	return &CommandComponent{
-		Placeholder:   "Type a command... (try: wcid)",
+		Placeholder:   placeholderCmd,
 		cursorVisible: true,
 		historyIdx:    -1,
 		width:         width,
@@ -67,6 +73,12 @@ func (l *CommandComponent) SetFocused(focused bool) {
 
 func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
+	case types.RoomSelectedMsg:
+		return func() tea.Msg {
+			return AppendHistoryMsg{Entries: []historyEntry{
+				{text: "switched to room " + msg.RoomID + " — use /chat to switch to chat mode", isResponse: true},
+			}}
+		}
 	case cursorBlinkMsg:
 		if msg.gen != l.blinkGen {
 			return nil // stale tick from before last reset
@@ -159,9 +171,9 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (l *CommandComponent) handleEnter() tea.Cmd {
-	cmd := l.textFieldValue
+	input := l.textFieldValue
 
-	l.cmdHistory = append(l.cmdHistory, cmd)
+	l.cmdHistory = append(l.cmdHistory, input)
 	if len(l.cmdHistory) > maxCmdHistory {
 		l.cmdHistory = l.cmdHistory[1:]
 	}
@@ -169,11 +181,42 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 	l.textFieldValue = ""
 	l.cursorPos = 0
 
-	entries := []historyEntry{
-		{text: "> " + cmd},
+	// Mode-switch commands are intercepted before anything else.
+	if input == "/chat" {
+		l.chatMode = true
+		l.Placeholder = placeholderChat
+		return func() tea.Msg {
+			return AppendHistoryMsg{Entries: []historyEntry{
+				{text: "> " + input},
+				{text: "Switched to chat mode. Type messages and press enter to send.", isResponse: true},
+			}}
+		}
+	}
+	if input == "/cmd" {
+		l.chatMode = false
+		l.Placeholder = placeholderCmd
+		return func() tea.Msg {
+			return AppendHistoryMsg{Entries: []historyEntry{
+				{text: "> " + input},
+				{text: "Switched to command mode.", isResponse: true},
+			}}
+		}
 	}
 
-	output, signal, err := commands.ExecCommand(cmd)
+	// In chat mode, plain input is sent as a room message.
+	if l.chatMode {
+		entries := []historyEntry{{text: "[you]: " + input}}
+		if err := commands.SendRoomMessage(input); err != nil {
+			entries = append(entries, historyEntry{text: err.Error(), isResponse: true})
+		}
+		return func() tea.Msg { return AppendHistoryMsg{Entries: entries} }
+	}
+
+	entries := []historyEntry{
+		{text: "> " + input},
+	}
+
+	output, signal, err := commands.ExecCommand(input)
 	if err != nil {
 		entries = append(entries, historyEntry{text: err.Error(), isResponse: true})
 	} else if output != "" {
@@ -215,6 +258,7 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 			break
 		}
 		id := *roomID
+		entries = append(entries, historyEntry{text: "use /chat to switch to chat mode", isResponse: true})
 		return tea.Batch(
 			func() tea.Msg { return AppendHistoryMsg{Entries: entries} },
 			emitConn,
