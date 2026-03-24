@@ -47,7 +47,7 @@ func computeLayout(termW, termH int, showMembers bool) layout {
 	}
 
 	usableW := termW - appPaddingW
-	pHistBoxW := .2
+	pHistBoxW := .7
 	pHistBoxH := .9
 	histBoxW := int(float64(termW) * pHistBoxW)
 	histBoxH := int(float64(termH) * pHistBoxH)
