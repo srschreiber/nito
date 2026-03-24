@@ -58,16 +58,18 @@ func (h *HintsComponent) Render() string {
 	default: // command (idx 4)
 		nav := k.Render("ctrl+b/f") + d.Render(" move") + sep + k.Render("ctrl+a/e") + d.Render(" home/end")
 		del := k.Render("ctrl+k") + d.Render(" del to end")
+		delSingle := k.Render("ctrl+d") + d.Render(" del char")
 		if h.chatMode {
 			lines = []string{
 				nav,
-				del,
+				delSingle + sep + del,
 				k.Render("shift+enter") + d.Render(" newline") + sep + k.Render("enter") + d.Render(" send"),
 			}
 		} else {
 			lines = []string{
 				k.Render("↑/↓") + d.Render(" / ") + k.Render("ctrl+p/n") + d.Render("  history"),
-				nav + sep + del,
+				nav,
+				delSingle + sep + del,
 				k.Render("enter") + d.Render("  run command"),
 			}
 		}

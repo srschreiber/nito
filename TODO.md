@@ -35,3 +35,4 @@ Room Connect
 nice to haves:
 - add sem version so client can check if it's compatible with the server before making requests, o.w. exit with error to update
 - command auto complete, that also sets up default long form parameters
+- make it so the command stack only has commands, not things like chat

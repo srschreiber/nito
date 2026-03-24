@@ -1,6 +1,8 @@
 package components
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -142,6 +144,13 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 				}
 				l.cursorPos = len([]rune(l.textFieldValue))
 			}
+		case "tab":
+			if !l.chatMode {
+				if tpl := l.completionTemplate(); tpl != "" {
+					l.textFieldValue = tpl
+					l.cursorPos = len([]rune(tpl))
+				}
+			}
 		case "enter":
 			if l.textFieldValue != "" {
 				keyCmd = l.handleEnter()
@@ -278,9 +287,67 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 	return tea.Batch(func() tea.Msg { return AppendHistoryMsg{Entries: entries} }, emitConn)
 }
 
+// ghostSuffix returns the grey inline suggestion text to display after the
+// current input, or "" if there is nothing to suggest. Only active in command
+// mode when the cursor is at the end of the input, there is no space yet, the
+// input doesn't start with '/', and the input is at least 2 characters.
+func (l *CommandComponent) ghostSuffix() string {
+	if l.chatMode {
+		return ""
+	}
+	text := l.textFieldValue
+	if len([]rune(text)) < 1 || strings.Contains(text, " ") || strings.HasPrefix(text, "/") {
+		return ""
+	}
+	if l.cursorPos != len([]rune(text)) {
+		return ""
+	}
+	def := commands.CompletePrefix(text)
+	if def == nil {
+		return ""
+	}
+	// Build the suffix: remainder of command name + arg placeholders
+	suffix := def.Name[len(text):]
+	for _, arg := range def.Args {
+		flag := arg.Long
+		if flag == "" {
+			flag = arg.Short
+		}
+		suffix += fmt.Sprintf(" --%s <%s>", flag, flag)
+	}
+	return suffix
+}
+
+// HasSuggestion reports whether there is an active inline autocomplete suggestion.
+func (l *CommandComponent) HasSuggestion() bool {
+	return l.ghostSuffix() != ""
+}
+
+// completionTemplate returns the full completed string to use on Tab, or "".
+func (l *CommandComponent) completionTemplate() string {
+	text := l.textFieldValue
+	if len([]rune(text)) < 1 || strings.Contains(text, " ") || strings.HasPrefix(text, "/") {
+		return ""
+	}
+	def := commands.CompletePrefix(text)
+	if def == nil {
+		return ""
+	}
+	result := def.Name
+	for _, arg := range def.Args {
+		flag := arg.Long
+		if flag == "" {
+			flag = arg.Short
+		}
+		result += fmt.Sprintf(" --%s <%s>", flag, flag)
+	}
+	return result
+}
+
 func (l *CommandComponent) Render() string {
 	prompt := styles.PromptStyle.Render("> ")
 	runes := []rune(l.textFieldValue)
+	ghost := l.ghostSuffix()
 
 	var render string
 	if l.focused && l.cursorVisible {
@@ -288,6 +355,11 @@ func (l *CommandComponent) Render() string {
 		if l.cursorPos < len(runes) {
 			underCursor := styles.CursorHighlightStyle.Render(string(runes[l.cursorPos]))
 			render = prompt + before + underCursor + string(runes[l.cursorPos+1:])
+		} else if ghost != "" {
+			// Use the first ghost char as the cursor highlight so the ghost
+			// text never shifts when the cursor blinks.
+			gr := []rune(ghost)
+			render = prompt + before + styles.CursorHighlightStyle.Render(string(gr[0])) + styles.Grey.Render(string(gr[1:]))
 		} else if len(runes) > 0 {
 			render = prompt + before + styles.CursorHighlightStyle.Render(" ")
 		} else {
@@ -297,7 +369,7 @@ func (l *CommandComponent) Render() string {
 		}
 	} else {
 		if len(runes) > 0 {
-			render = prompt + string(runes)
+			render = prompt + string(runes) + styles.Grey.Render(ghost)
 		} else {
 			render = prompt + styles.Grey.Render(l.Placeholder)
 		}

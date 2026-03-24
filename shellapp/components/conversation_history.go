@@ -195,7 +195,7 @@ func (h *ConversationHistory) Render() string {
 		badge = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true).Render("[chat]")
 		title = styles.SectionTitleStyle.Render("Chat")
 	} else {
-		badge = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("[cmd]")
+		badge = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Bold(true).Render("[cmd]")
 		title = styles.SectionTitleStyle.Render("Shell")
 	}
 	rows := []string{badge + " " + title}

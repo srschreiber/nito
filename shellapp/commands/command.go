@@ -79,6 +79,22 @@ var CommandNames = func() map[string]interface{} {
 	return m
 }()
 
+// CompletePrefix returns the first command whose name starts with prefix,
+// or nil if there is no match. prefix must be at least 2 characters an
+// must not contain a space (only the first word is matched).
+func CompletePrefix(prefix string) *CommandDef {
+	if len(prefix) < 1 || strings.Contains(prefix, " ") {
+		return nil
+	}
+	prefix = strings.ToLower(prefix)
+	for i := range Registry {
+		if strings.HasPrefix(Registry[i].Name, prefix) {
+			return &Registry[i]
+		}
+	}
+	return nil
+}
+
 type ArgumentType string
 
 const (

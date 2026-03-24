@@ -322,6 +322,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "tab":
+			if m.command.HasSuggestion() {
+				return m, m.comps[m.focusable[m.focusedComponent]].Update(msg)
+			}
 			m.comps[m.focusable[m.focusedComponent]].SetFocused(false)
 			m.focusedComponent = (m.focusedComponent + 1) % len(m.focusable)
 			m.comps[m.focusable[m.focusedComponent]].SetFocused(true)
