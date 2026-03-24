@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/shellapp/keys"
+	"github.com/srschreiber/nito/utils"
 	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
@@ -27,10 +28,11 @@ type RoomInfo struct {
 type Session struct {
 	UserID           string // username (used as the identity token sent to the broker)
 	BrokerURL        string
-	RoomID           *string   // currently selected room
-	EncryptedRoomKey *string   // encrypted with pub key
-	RoomKeyVersion   *int      // key version for the current room's key
-	RoomInfo         *RoomInfo // info about this user's activity in the selected room
+	RoomID           *string                       // currently selected room
+	EncryptedRoomKey *string                       // encrypted with pub key
+	KeyManager       map[string]*keys.RoomKeyChain // in-memory cache of room key chains for each room, indexed by room ID
+	RoomKeyVersion   *int                          // key version for the current room's key
+	RoomInfo         *RoomInfo                     // info about this user's activity in the selected room
 }
 
 var (
@@ -363,6 +365,7 @@ func GetSessionRoomID() *string {
 	return session.RoomID
 }
 
+// GetSessionEncryptedRoomKey returns the encrypted room key for the start of the chain
 func GetSessionEncryptedRoomKey() *string {
 	mu.Lock()
 	defer mu.Unlock()
@@ -370,6 +373,39 @@ func GetSessionEncryptedRoomKey() *string {
 		return nil
 	}
 	return session.EncryptedRoomKey
+}
+
+func GetSessionUserID() string {
+	mu.Lock()
+	defer mu.Unlock()
+	if session == nil {
+		return ""
+	}
+	return session.UserID
+}
+
+func GetOrCreateRoomKeyChain() (*keys.RoomKeyChain, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if session == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+	roomID := utils.DerefOrZero(session.RoomID)
+	chain, ok := session.KeyManager[roomID]
+	if !ok {
+		baseKey := session.EncryptedRoomKey
+		// decrypt
+		keyDecrypted, err := keys.DecryptRoomKey(utils.DerefOrZero(baseKey))
+		if err != nil {
+			log.Printf("decrypt room key for room %s: %v", roomID, err)
+			// return an empty chain that will fail to encrypt/decrypt, rather than panicking or returning an error that callers would have to handle
+			return nil, err
+		}
+
+		chain = keys.NewRoomKeyChain(keyDecrypted)
+		session.KeyManager[roomID] = chain
+	}
+	return chain, nil
 }
 
 func GetSessionRoomKeyVersion() *int {

@@ -10,10 +10,8 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/srschreiber/nito/shellapp/components"
 	"github.com/srschreiber/nito/shellapp/connection"
-	"github.com/srschreiber/nito/shellapp/keys"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
-	"github.com/srschreiber/nito/utils"
 	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
@@ -209,28 +207,18 @@ func waitRoomMessages() tea.Cmd {
 			return roomMessageWsMsg{}
 		}
 
-		encRoomKey := connection.GetSessionEncryptedRoomKey()
-		if encRoomKey == nil {
-			fmt.Printf("waitRoomMessages: no encrypted room key in session\n")
-			return types.ErrorMsg{
-				Message: "Received room message but no room key available in session",
-			}
-		}
-
-		roomKey, err := keys.DecryptRoomKey(utils.DerefOrZero(encRoomKey))
+		ukc, err := connection.GetOrCreateRoomKeyChain()
 		if err != nil {
-			fmt.Printf("waitRoomMessages: decrypt room key: %v\n", err)
+			fmt.Printf("waitRoomMessages: get room key chain: %v\n", err)
 			return roomMessageWsMsg{}
 		}
+
 		ciphertext, err := base64.StdEncoding.DecodeString(payload.EncryptedText)
 		if err != nil {
 			fmt.Printf("waitRoomMessages: decode ciphertext: %v\n", err)
 			return roomMessageWsMsg{}
 		}
-		// TODO: Pass per-user message count to enable ratcheting. Currently always nil,
-		// which reuses the same base key for every message. To add forward secrecy,
-		// track a per-(room, sender) receive counter and pass it here, incrementing after each message.
-		plaintext, err := keys.DecryptMessageWithRoomKey(ciphertext, payload.FromUsername, roomKey, nil)
+		plaintext, err := ukc.DecryptMessageWithRoomKey(ciphertext, payload.FromUsername, &payload.SenderMessageCount)
 		if err != nil {
 			fmt.Printf("waitRoomMessages: decrypt message: %v\n", err)
 			return roomMessageWsMsg{}

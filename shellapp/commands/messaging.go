@@ -67,9 +67,10 @@ func sayCmd(args []Argument) (string, error) {
 		return "", errors.New("say: -m/--message <text> is required")
 	}
 
-	encRoomKey := connection.GetSessionEncryptedRoomKey()
-	if encRoomKey == nil {
-		return "", errors.New("say: no room key available for selected room")
+	ukc, err := connection.GetOrCreateRoomKeyChain()
+
+	if err != nil {
+		return "", fmt.Errorf("say: get room Key chain: %w", err)
 	}
 	roomKeyVersion := utils.DerefOrZero(connection.GetSessionRoomKeyVersion())
 
@@ -78,11 +79,7 @@ func sayCmd(args []Argument) (string, error) {
 		return "", errors.New("say: no room info available for selected room")
 	}
 
-	roomKey, err := keys.DecryptRoomKey(utils.DerefOrZero(encRoomKey))
-	if err != nil {
-		return "", fmt.Errorf("say: decrypt room key: %w", err)
-	}
-	ciphertext, err := keys.EncryptMessageWithRoomKey([]byte(text), s.UserID, roomKey, nil)
+	ciphertext, err := ukc.EncryptMessageWithRoomKey([]byte(text), s.UserID, &roomInfo.SentMessageCount)
 	if err != nil {
 		return "", fmt.Errorf("say: encrypt: %w", err)
 	}

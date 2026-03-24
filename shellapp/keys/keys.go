@@ -34,12 +34,12 @@ func keyPaths() (privPath, pubPath string, err error) {
 	}
 	dir := filepath.Join(cwd, keyDir)
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return "", "", fmt.Errorf("create key dir: %w", err)
+		return "", "", fmt.Errorf("create Key dir: %w", err)
 	}
 	return filepath.Join(dir, "private_key.pem"), filepath.Join(dir, "public_key.pem"), nil
 }
 
-// HaveKeys returns true if a local key pair exists (i.e. the user has registered).
+// HaveKeys returns true if a local Key pair exists (i.e. the user has registered).
 func HaveKeys() bool {
 	privPath, _, err := keyPaths()
 	if err != nil {
@@ -49,9 +49,9 @@ func HaveKeys() bool {
 	return err == nil
 }
 
-// LoadOrGenerate loads the RSA-2048 key pair from .nito/ in the working directory,
+// LoadOrGenerate loads the RSA-2048 Key pair from .nito/ in the working directory,
 // generating and saving them if they don't exist yet.
-// Returns the public key as a PEM string ready to send to the broker.
+// Returns the public Key as a PEM string ready to send to the broker.
 func LoadOrGenerate() (pub string, err error) {
 	privPath, pubPath, err := keyPaths()
 	if err != nil {
@@ -62,16 +62,16 @@ func LoadOrGenerate() (pub string, err error) {
 		// Keys already exist — load them.
 		pubPEM, err := os.ReadFile(pubPath)
 		if err != nil {
-			return "", fmt.Errorf("read public key: %w", err)
+			return "", fmt.Errorf("read public Key: %w", err)
 		}
 		return string(pubPEM), nil
 	}
 
-	// Generate new key pair.
-	fmt.Printf("generating RSA-2048 key pair in %s/\n", filepath.Join(keyDir))
+	// Generate new Key pair.
+	fmt.Printf("generating RSA-2048 Key pair in %s/\n", filepath.Join(keyDir))
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return "", fmt.Errorf("generate key: %w", err)
+		return "", fmt.Errorf("generate Key: %w", err)
 	}
 
 	privBytes, err := x509.MarshalPKCS8PrivateKey(key)
@@ -80,7 +80,7 @@ func LoadOrGenerate() (pub string, err error) {
 	}
 	privPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
 	if err := os.WriteFile(privPath, privPEM, 0600); err != nil {
-		return "", fmt.Errorf("save private key: %w", err)
+		return "", fmt.Errorf("save private Key: %w", err)
 	}
 
 	pubBytes, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
@@ -89,7 +89,7 @@ func LoadOrGenerate() (pub string, err error) {
 	}
 	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubBytes})
 	if err := os.WriteFile(pubPath, pubPEM, 0644); err != nil {
-		return "", fmt.Errorf("save public key: %w", err)
+		return "", fmt.Errorf("save public Key: %w", err)
 	}
 
 	cwd, _ := os.Getwd()
@@ -97,7 +97,7 @@ func LoadOrGenerate() (pub string, err error) {
 	return string(pubPEM), nil
 }
 
-// Sign signs message with the local RSA private key using PSS-SHA256 and returns
+// Sign signs message with the local RSA private Key using PSS-SHA256 and returns
 // the base64-encoded signature. Used to authenticate API and RPC requests.
 func Sign(message string) (string, error) {
 	privPath, _, err := keyPaths()
@@ -106,19 +106,19 @@ func Sign(message string) (string, error) {
 	}
 	privPEM, err := os.ReadFile(privPath)
 	if err != nil {
-		return "", fmt.Errorf("read private key: %w", err)
+		return "", fmt.Errorf("read private Key: %w", err)
 	}
 	block, _ := pem.Decode(privPEM)
 	if block == nil {
-		return "", fmt.Errorf("decode private key PEM: no block found")
+		return "", fmt.Errorf("decode private Key PEM: no block found")
 	}
 	privKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return "", fmt.Errorf("parse private key: %w", err)
+		return "", fmt.Errorf("parse private Key: %w", err)
 	}
 	rsaKey, ok := privKey.(*rsa.PrivateKey)
 	if !ok {
-		return "", fmt.Errorf("expected RSA private key")
+		return "", fmt.Errorf("expected RSA private Key")
 	}
 	h := sha256.Sum256([]byte(message))
 	sig, err := rsa.SignPSS(rand.Reader, rsaKey, crypto.SHA256, h[:], nil)
@@ -128,7 +128,7 @@ func Sign(message string) (string, error) {
 	return base64.StdEncoding.EncodeToString(sig), nil
 }
 
-// DecryptRoomKey decrypts a base64-encoded RSA-OAEP ciphertext using the local private key.
+// DecryptRoomKey decrypts a base64-encoded RSA-OAEP ciphertext using the local private Key.
 func DecryptRoomKey(encryptedKeyB64 string) ([]byte, error) {
 	privPath, _, err := keyPaths()
 	if err != nil {
@@ -136,19 +136,19 @@ func DecryptRoomKey(encryptedKeyB64 string) ([]byte, error) {
 	}
 	privPEM, err := os.ReadFile(privPath)
 	if err != nil {
-		return nil, fmt.Errorf("read private key: %w", err)
+		return nil, fmt.Errorf("read private Key: %w", err)
 	}
 	block, _ := pem.Decode(privPEM)
 	if block == nil {
-		return nil, fmt.Errorf("decode private key PEM: no block found")
+		return nil, fmt.Errorf("decode private Key PEM: no block found")
 	}
 	privKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("parse private key: %w", err)
+		return nil, fmt.Errorf("parse private Key: %w", err)
 	}
 	rsaKey, ok := privKey.(*rsa.PrivateKey)
 	if !ok {
-		return nil, fmt.Errorf("expected RSA private key")
+		return nil, fmt.Errorf("expected RSA private Key")
 	}
 	ct, err := base64.StdEncoding.DecodeString(encryptedKeyB64)
 	if err != nil {
@@ -156,43 +156,43 @@ func DecryptRoomKey(encryptedKeyB64 string) ([]byte, error) {
 	}
 	roomKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, rsaKey, ct, nil)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt room key: %w", err)
+		return nil, fmt.Errorf("decrypt room Key: %w", err)
 	}
 	return roomKey, nil
 }
 
-// EncryptRoomKeyForPEM encrypts roomKey with the given RSA public key PEM using OAEP-SHA256.
+// EncryptRoomKeyForPEM encrypts roomKey with the given RSA public Key PEM using OAEP-SHA256.
 func EncryptRoomKeyForPEM(roomKey []byte, publicKeyPEM string) (string, error) {
 	block, _ := pem.Decode([]byte(publicKeyPEM))
 	if block == nil {
-		return "", fmt.Errorf("decode public key PEM: no block found")
+		return "", fmt.Errorf("decode public Key PEM: no block found")
 	}
 	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return "", fmt.Errorf("parse public key: %w", err)
+		return "", fmt.Errorf("parse public Key: %w", err)
 	}
 	rsaPub, ok := pub.(*rsa.PublicKey)
 	if !ok {
-		return "", fmt.Errorf("expected RSA public key")
+		return "", fmt.Errorf("expected RSA public Key")
 	}
 	ct, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPub, roomKey, nil)
 	if err != nil {
-		return "", fmt.Errorf("encrypt room key: %w", err)
+		return "", fmt.Errorf("encrypt room Key: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(ct), nil
 }
 
-// GenerateRoomKey generates a random 32-byte key suitable for AES-256-GCM,
+// GenerateRoomKey generates a random 32-byte Key suitable for AES-256-GCM,
 // which provides authenticated encryption fast enough for real-time use (e.g. VoIP).
 func GenerateRoomKey() ([]byte, error) {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
-		return nil, fmt.Errorf("generate room key: %w", err)
+		return nil, fmt.Errorf("generate room Key: %w", err)
 	}
 	return key, nil
 }
 
-// EncryptRoomKey encrypts roomKey with the RSA-2048 public key on disk using
+// EncryptRoomKey encrypts roomKey with the RSA-2048 public Key on disk using
 // OAEP-SHA256, and returns a base64-encoded ciphertext safe to send to the broker.
 func EncryptRoomKey(roomKey []byte) (string, error) {
 	_, pubPath, err := keyPaths()
@@ -201,28 +201,28 @@ func EncryptRoomKey(roomKey []byte) (string, error) {
 	}
 	pubPEM, err := os.ReadFile(pubPath)
 	if err != nil {
-		return "", fmt.Errorf("read public key: %w", err)
+		return "", fmt.Errorf("read public Key: %w", err)
 	}
 	block, _ := pem.Decode(pubPEM)
 	if block == nil {
-		return "", fmt.Errorf("decode public key PEM: no block found")
+		return "", fmt.Errorf("decode public Key PEM: no block found")
 	}
 	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return "", fmt.Errorf("parse public key: %w", err)
+		return "", fmt.Errorf("parse public Key: %w", err)
 	}
 	rsaPub, ok := pub.(*rsa.PublicKey)
 	if !ok {
-		return "", fmt.Errorf("expected RSA public key")
+		return "", fmt.Errorf("expected RSA public Key")
 	}
 	ct, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPub, roomKey, nil)
 	if err != nil {
-		return "", fmt.Errorf("encrypt room key: %w", err)
+		return "", fmt.Errorf("encrypt room Key: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(ct), nil
 }
 
-// GenerateMessageEncryptionKey generates a message encryption key derived from the room key and user ID
+// GenerateMessageEncryptionKey generates a message encryption Key derived from the room Key and user ID
 // using HMAC-SHA256
 func GenerateMessageEncryptionKey(roomKey []byte, userID string) []byte {
 	hash := hmac.New(sha256.New, roomKey)
@@ -230,19 +230,27 @@ func GenerateMessageEncryptionKey(roomKey []byte, userID string) []byte {
 	return hash.Sum(nil)
 }
 
-// EncryptMessageWithRoomKey encrypts the message with the room key
+func FormatHMACInput(userID string, userMessageCount *int) string {
+	return fmt.Sprintf("%s/%d", userID, utils.DerefOrZero(userMessageCount))
+}
+
+// EncryptMessageWithRoomKey encrypts the message with the room Key
 // The function looks like
 // key_message1 = HMAC(roomKey, userID || userMessageCount)
 // key_message2 = HMAC(key_message1, userID || userMessageCount)
 // key_message3 = HMAC(key_message2, userID || userMessageCount)
 // it is on a per-user basis to avoid race conditions that can affect message ordering
-// once the key is obtained, ChaCha20-Poly1305 can be used to encrypt the message with the derived key
+// once the Key is obtained, ChaCha20-Poly1305 can be used to encrypt the message with the derived Key
 // Apparently, ChaCha20-Poly1305 is fast for software-only environments with short messages
 // This can be used as a util for a ratchet scheme if userMessageCount is set and increments, using the
-// output key as the new room key for the next message.
-// This way, even if a key is compromised, only messages encrypted with that key are at risk, and future messages remain secure.
-func EncryptMessageWithRoomKey(message []byte, userID string, roomKey []byte, userMessageCount *int) ([]byte, error) {
-	encKey := GenerateMessageEncryptionKey(roomKey, fmt.Sprintf("%s%d", userID, utils.DerefOrZero(userMessageCount)))
+// output Key as the new room Key for the next message.
+// This way, even if a Key is compromised, only messages encrypted with that Key are at risk, and future messages remain secure.
+func (rkc *RoomKeyChain) EncryptMessageWithRoomKey(message []byte, userID string, userMessageCount *int) ([]byte, error) {
+	encKey, err := rkc.GetUserKey(userID, utils.DerefOrZero(userMessageCount))
+	if err != nil {
+		return nil, fmt.Errorf("derive message encryption Key: %w", err)
+	}
+
 	aead, err := chacha20poly1305.New(encKey)
 	if err != nil {
 		return nil, fmt.Errorf("create AEAD cipher: %w", err)
@@ -257,8 +265,12 @@ func EncryptMessageWithRoomKey(message []byte, userID string, roomKey []byte, us
 	return append(nonce, ciphertext...), nil
 }
 
-func DecryptMessageWithRoomKey(message []byte, userID string, roomKey []byte, userMessageCount *int) ([]byte, error) {
-	encKey := GenerateMessageEncryptionKey(roomKey, fmt.Sprintf("%s%d", userID, utils.DerefOrZero(userMessageCount)))
+func (rkc *RoomKeyChain) DecryptMessageWithRoomKey(message []byte, userID string, userMessageCount *int) ([]byte, error) {
+	encKey, err := rkc.GetUserKey(userID, utils.DerefOrZero(userMessageCount))
+	if err != nil {
+		return nil, fmt.Errorf("derive message encryption Key: %w", err)
+	}
+
 	aead, err := chacha20poly1305.New(encKey)
 	if err != nil {
 		return nil, fmt.Errorf("create AEAD cipher: %w", err)
