@@ -22,6 +22,9 @@ type AppendHistoryMsg struct {
 // ClearHistoryMsg is emitted by CommandComponent when history should be cleared.
 type ClearHistoryMsg struct{}
 
+// JumpScrollMsg requests that the history viewport jump to a specific line (1-indexed from top).
+type JumpScrollMsg struct{ Line int }
+
 // NewResponseAppendMsg builds an AppendHistoryMsg for a single server-response entry.
 func NewResponseAppendMsg(text string) AppendHistoryMsg {
 	return AppendHistoryMsg{Entries: []historyEntry{{text: text, isResponse: true}}}
@@ -132,6 +135,28 @@ func (h *ConversationHistory) Update(msg tea.Msg) tea.Cmd {
 	case ClearHistoryMsg:
 		h.entries = nil
 		h.scroll = 0
+	case JumpScrollMsg:
+		lines := h.allLines()
+		total := len(lines)
+		budget := h.contentBudget()
+		maxScroll := total - budget
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+		target := msg.Line
+		if target < 1 {
+			target = 1
+		}
+		if target > total {
+			target = total
+		}
+		h.scroll = total - target
+		if h.scroll > maxScroll {
+			h.scroll = maxScroll
+		}
+		if h.scroll < 0 {
+			h.scroll = 0
+		}
 	case tea.KeyPressMsg:
 		if !h.focused {
 			return nil
@@ -144,11 +169,11 @@ func (h *ConversationHistory) Update(msg tea.Msg) tea.Cmd {
 			maxScroll = 0
 		}
 		switch msg.String() {
-		case "up":
+		case "up", "ctrl+p":
 			if h.scroll < maxScroll {
 				h.scroll++
 			}
-		case "down":
+		case "down", "ctrl+n":
 			if h.scroll > 0 {
 				h.scroll--
 			}
@@ -211,7 +236,7 @@ func (h *ConversationHistory) Render() string {
 		}
 
 		// Fixed last row: position indicator.
-		rows = append(rows, styles.LineStyle.Render(fmt.Sprintf("L%d/%d", end, total)))
+		rows = append(rows, styles.LineStyle.Render(fmt.Sprintf("L%d/%d  (jump -L <n> to navigate)", end, total)))
 	}
 
 	borderColor := lipgloss.Color("238")

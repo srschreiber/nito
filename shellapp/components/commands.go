@@ -264,6 +264,9 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 			emitConn,
 			func() tea.Msg { return types.RoomSelectedMsg{RoomID: id} },
 		)
+	case commands.SignalJump:
+		line := commands.JumpLine
+		return func() tea.Msg { return JumpScrollMsg{Line: line} }
 	}
 
 	return tea.Batch(func() tea.Msg { return AppendHistoryMsg{Entries: entries} }, emitConn)

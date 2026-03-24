@@ -14,6 +14,7 @@ const (
 	SignalRefreshRooms Signal = 3
 	SignalRoomSelected Signal = 4
 	SignalConnected    Signal = 5
+	SignalJump         Signal = 6
 )
 
 type ArgDef struct {
@@ -64,6 +65,9 @@ var Registry = []CommandDef{
 	}},
 	{Name: CmdSay, Desc: "send a message to the currently selected room", Args: []ArgDef{
 		{Short: "m", Long: "message", Desc: "message text to send"},
+	}},
+	{Name: CmdJump, Desc: "jump to a specific line in the conversation history", Args: []ArgDef{
+		{Short: "L", Long: "line", Desc: "target line number (1-indexed from top)"},
 	}},
 }
 

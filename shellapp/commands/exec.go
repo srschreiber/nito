@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -22,7 +23,11 @@ const (
 	CmdRoomInvites = "room-invites"
 	CmdRoomAccept  = "room-accept"
 	CmdSay         = "say"
+	CmdJump        = "jump"
 )
+
+// JumpLine holds the target line requested by the most recent jump command.
+var JumpLine int
 
 var parser = NewParser()
 
@@ -150,6 +155,17 @@ func ExecCommand(cmd string) (string, Signal, error) {
 	case CmdSay:
 		out, err := sayCmd(parsedCommand.Args)
 		return out, SignalNone, err
+	case CmdJump:
+		lineStr := extractArg(parsedCommand.Args, "L", "line")
+		if lineStr == "" {
+			return "", SignalNone, errors.New("jump: -L <line> is required")
+		}
+		n, err := strconv.Atoi(lineStr)
+		if err != nil {
+			return "", SignalNone, errors.New("jump: -L must be an integer")
+		}
+		JumpLine = n
+		return "", SignalJump, nil
 	default:
 		return "", SignalNone, errors.New("unknown command: " + parsedCommand.Name)
 	}

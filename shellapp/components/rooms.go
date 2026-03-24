@@ -76,11 +76,11 @@ func (r *RoomsComponent) Update(msg tea.Msg) tea.Cmd {
 		r.selected = &msg.RoomID
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "up", "k":
+		case "up", "ctrl+p":
 			if r.cursor > 0 {
 				r.cursor--
 			}
-		case "down", "j":
+		case "down", "ctrl+n":
 			if r.cursor < len(r.rooms)-1 {
 				r.cursor++
 			}
