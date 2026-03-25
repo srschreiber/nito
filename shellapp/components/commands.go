@@ -2,10 +2,18 @@ package components
 
 import (
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/qeesung/image2ascii/convert"
 	"github.com/srschreiber/nito/shellapp/commands"
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/history"
@@ -14,6 +22,29 @@ import (
 )
 
 const maxCmdHistory = 20
+
+// chatOpDef describes a chat op for autocomplete.
+type chatOpDef struct {
+	name    string // e.g. ".image"
+	argHint string // e.g. "<filename>"
+}
+
+var chatOps = []chatOpDef{
+	{name: ".image", argHint: "<filename> [-h <height>]"},
+}
+
+// completeChatOp returns the first op whose name starts with prefix, or nil.
+func completeChatOp(prefix string) *chatOpDef {
+	if !strings.HasPrefix(prefix, ".") || strings.Contains(prefix, " ") {
+		return nil
+	}
+	for i := range chatOps {
+		if strings.HasPrefix(chatOps[i].name, prefix) {
+			return &chatOps[i]
+		}
+	}
+	return nil
+}
 
 type cursorBlinkMsg struct{ gen int }
 
@@ -146,11 +177,9 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 				l.cursorPos = len([]rune(l.textFieldValue))
 			}
 		case "tab":
-			if !l.chatMode {
-				if tpl := l.completionTemplate(); tpl != "" {
-					l.textFieldValue = tpl
-					l.cursorPos = len([]rune(tpl))
-				}
+			if tpl := l.completionTemplate(); tpl != "" {
+				l.textFieldValue = tpl
+				l.cursorPos = len([]rune(tpl))
 			}
 		case "enter":
 			if l.textFieldValue != "" {
@@ -224,6 +253,163 @@ func (l *CommandComponent) handlePasswordSubmit(password string) tea.Cmd {
 	return tea.Batch(func() tea.Msg { return AppendHistoryMsg{Entries: entries} }, emitConn)
 }
 
+func (l *CommandComponent) handleChatOp(input string) tea.Cmd {
+	parts := strings.SplitN(input, " ", 2)
+	op := parts[0]
+	switch op {
+	case ".image":
+		if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
+			return func() tea.Msg {
+				return AppendHistoryMsg{Entries: []historyEntry{
+					{text: ".image: usage: .image <filename> [-h <height>]", isResponse: true},
+				}}
+			}
+		}
+		// Parse: .image <filename> [-h|-height <n>]
+		tokens := strings.Fields(parts[1])
+		filename := ""
+		height := 0
+		for i := 0; i < len(tokens); i++ {
+			if (tokens[i] == "-h" || tokens[i] == "--height") && i+1 < len(tokens) {
+				n, err := strconv.Atoi(tokens[i+1])
+				if err == nil {
+					height = n
+				}
+				i++
+			} else if filename == "" {
+				filename = tokens[i]
+			}
+		}
+		if filename == "" {
+			return func() tea.Msg {
+				return AppendHistoryMsg{Entries: []historyEntry{
+					{text: ".image: usage: .image <filename> [-h <height>]", isResponse: true},
+				}}
+			}
+		}
+		return imageOp(filename, height)
+	default:
+		return func() tea.Msg {
+			return AppendHistoryMsg{Entries: []historyEntry{
+				{text: "unknown op: " + op, isResponse: true},
+			}}
+		}
+	}
+}
+
+// imageOp loads an image from ~/.nito/images/<filename>, converts it to ASCII
+// art scaled to fit within maxW×maxH (preserving aspect ratio), and appends it
+// to the conversation history. height overrides the default max height (capped
+// at 100); pass 0 to use the default.
+func imageOp(filename string, height int) tea.Cmd {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		errMsg := err.Error()
+		return func() tea.Msg {
+			return AppendHistoryMsg{Entries: []historyEntry{
+				{text: ".image: " + errMsg, isResponse: true},
+			}}
+		}
+	}
+
+	// Resolve image path: try ~/.nito/images/<basename> first, then cwd/.nito/images/<basename>.
+	base := filepath.Base(filename)
+	nitoPath := filepath.Join(home, ".nito", "images", base)
+	var imagePath string
+	if _, statErr := os.Stat(nitoPath); statErr == nil {
+		imagePath = nitoPath
+	} else {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			errMsg := cwdErr.Error()
+			return func() tea.Msg {
+				return AppendHistoryMsg{Entries: []historyEntry{
+					{text: ".image: " + errMsg, isResponse: true},
+				}}
+			}
+		}
+		imagePath = filepath.Join(cwd, ".nito", "images", base)
+	}
+
+	// Read image dimensions to compute aspect-ratio-preserving fit within 50x50.
+	f, err := os.Open(imagePath)
+	if err != nil {
+		errMsg := err.Error()
+		return func() tea.Msg {
+			return AppendHistoryMsg{Entries: []historyEntry{
+				{text: ".image: " + errMsg, isResponse: true},
+			}}
+		}
+	}
+	cfg, _, err := image.DecodeConfig(f)
+	f.Close()
+	if err != nil {
+		errMsg := err.Error()
+		return func() tea.Msg {
+			return AppendHistoryMsg{Entries: []historyEntry{
+				{text: ".image: decode config: " + errMsg, isResponse: true},
+			}}
+		}
+	}
+
+	const defaultMax = 100
+	maxW := defaultMax
+	maxH := defaultMax
+	if height > 0 {
+		if height > 100 {
+			height = 100
+		}
+		maxH = height
+	}
+	w, h := fitAspect(cfg.Width, cfg.Height, maxW, maxH)
+
+	converter := convert.NewImageConverter()
+	options := convert.DefaultOptions
+	options.FixedWidth = w
+	options.FixedHeight = h
+	options.Colored = true
+
+	ascii := converter.ImageFile2ASCIIString(imagePath, &options)
+	if strings.TrimSpace(ascii) == "" {
+		return func() tea.Msg {
+			return AppendHistoryMsg{Entries: []historyEntry{
+				{text: ".image: failed to convert '" + filename + "' (check it exists in ~/.nito/images/)", isResponse: true},
+			}}
+		}
+	}
+
+	text := ascii
+	return func() tea.Msg {
+		return AppendHistoryMsg{Entries: []historyEntry{
+			{text: "> .image " + filename},
+			{text: text, isRaw: true},
+		}}
+	}
+}
+
+// fitAspect returns width and height that fit within maxW×maxH while preserving
+// the original aspect ratio.
+func fitAspect(srcW, srcH, maxW, maxH int) (int, int) {
+	if srcW <= 0 || srcH <= 0 {
+		return maxW, maxH
+	}
+	scaleW := float64(maxW) / float64(srcW)
+	scaleH := float64(maxH) / float64(srcH)
+	scale := scaleW
+	if scaleH < scale {
+		scale = scaleH
+	}
+	w := int(float64(srcW) * scale)
+	h := int(float64(srcH) * scale)
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	return w, h
+}
+
 func (l *CommandComponent) handleEnter() tea.Cmd {
 	input := l.textFieldValue
 	l.textFieldValue = ""
@@ -271,6 +457,9 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 
 	// In chat mode, plain input is sent as a room message.
 	if l.chatMode {
+		if strings.HasPrefix(input, ".") {
+			return l.handleChatOp(input)
+		}
 		entries := []historyEntry{{text: "[you]: " + input}}
 		if err := commands.SendRoomMessage(input); err != nil {
 			entries = append(entries, historyEntry{text: err.Error(), isResponse: true})
@@ -345,25 +534,30 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 }
 
 // ghostSuffix returns the grey inline suggestion text to display after the
-// current input, or "" if there is nothing to suggest. Only active in command
-// mode when the cursor is at the end of the input, there is no space yet, the
-// input doesn't start with '/', and the input is at least 2 characters.
+// current input, or "" if there is nothing to suggest. In command mode it
+// completes command names; in chat mode it completes .op names.
 func (l *CommandComponent) ghostSuffix() string {
-	if l.chatMode {
-		return ""
-	}
 	text := l.textFieldValue
-	if len([]rune(text)) < 1 || strings.Contains(text, " ") || strings.HasPrefix(text, "/") {
+	if len([]rune(text)) < 1 || strings.Contains(text, " ") {
 		return ""
 	}
 	if l.cursorPos != len([]rune(text)) {
+		return ""
+	}
+	if l.chatMode {
+		op := completeChatOp(text)
+		if op == nil {
+			return ""
+		}
+		return op.name[len(text):] + " " + op.argHint
+	}
+	if strings.HasPrefix(text, "/") {
 		return ""
 	}
 	def := commands.CompletePrefix(text)
 	if def == nil {
 		return ""
 	}
-	// Build the suffix: remainder of command name + arg placeholders
 	suffix := def.Name[len(text):]
 	for _, arg := range def.Args {
 		flag := arg.Long
@@ -383,7 +577,17 @@ func (l *CommandComponent) HasSuggestion() bool {
 // completionTemplate returns the full completed string to use on Tab, or "".
 func (l *CommandComponent) completionTemplate() string {
 	text := l.textFieldValue
-	if len([]rune(text)) < 1 || strings.Contains(text, " ") || strings.HasPrefix(text, "/") {
+	if len([]rune(text)) < 1 || strings.Contains(text, " ") {
+		return ""
+	}
+	if l.chatMode {
+		op := completeChatOp(text)
+		if op == nil {
+			return ""
+		}
+		return op.name + " " + op.argHint
+	}
+	if strings.HasPrefix(text, "/") {
 		return ""
 	}
 	def := commands.CompletePrefix(text)

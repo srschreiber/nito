@@ -38,6 +38,9 @@ VOIP
    - once notification is sent to change keys, grace time will start (only 5 seconds)
    - handled by sendRoomMessage
 
+Terminal images:
+- Just use ascii art for now, image to ascii
+
 nice to haves:
 - add sem version so client can check if it's compatible with the server before making requests, o.w. exit with error to update
 - command auto complete, that also sets up default long form parameters

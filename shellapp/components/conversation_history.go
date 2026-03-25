@@ -12,6 +12,7 @@ import (
 type historyEntry struct {
 	text       string // raw text, may contain newlines/tabs; wrapped at render time
 	isResponse bool
+	isRaw      bool // if true, emit lines as-is (preserves ANSI color codes, e.g. ASCII art)
 }
 
 // AppendHistoryMsg is emitted by CommandComponent when entries should be added.
@@ -69,7 +70,12 @@ func (h *ConversationHistory) textWidth() int {
 }
 
 // wrapEntry splits one raw entry into display-ready styled lines, hard-wrapping at tw.
+// For isRaw entries the text is split on newlines only — no rune-count wrapping —
+// so that embedded ANSI escape codes are never split mid-sequence.
 func wrapEntry(e historyEntry, tw int) []string {
+	if e.isRaw {
+		return strings.Split(e.text, "\n")
+	}
 	raw := strings.ReplaceAll(e.text, "\t", "    ")
 	var lines []string
 	for _, para := range strings.Split(raw, "\n") {
@@ -94,7 +100,9 @@ func (h *ConversationHistory) allLines() []string {
 	var lines []string
 	for _, e := range h.entries {
 		for _, l := range wrapEntry(e, tw) {
-			if e.isResponse {
+			if e.isRaw {
+				lines = append(lines, l)
+			} else if e.isResponse {
 				lines = append(lines, styles.ResponseStyle.Render(l))
 			} else {
 				lines = append(lines, styles.Grey.Render(l))
