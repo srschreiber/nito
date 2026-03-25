@@ -538,6 +538,9 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 // current input, or "" if there is nothing to suggest. In command mode it
 // completes command names; in chat mode it completes .op names.
 func (l *CommandComponent) ghostSuffix() string {
+	if l.passwordMode {
+		return ""
+	}
 	text := l.textFieldValue
 	if len([]rune(text)) < 1 || strings.Contains(text, " ") {
 		return ""
