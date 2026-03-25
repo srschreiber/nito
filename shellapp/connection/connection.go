@@ -28,6 +28,7 @@ type RoomInfo struct {
 type Session struct {
 	UserID           string // username (used as the identity token sent to the broker)
 	BrokerURL        string
+	JWTToken         string                        // JWT token for API authentication
 	RoomID           *string                       // currently selected room
 	EncryptedRoomKey *string                       // encrypted with pub key
 	KeyManager       map[string]*keys.RoomKeyChain // in-memory cache of room key chains for each room, indexed by room ID
@@ -55,11 +56,12 @@ func normalizeURL(url string) string {
 
 // Register sends username and public key to the broker, creating a DB entry if the user
 // doesn't exist yet. Returns the user's ID and whether they were already registered.
-func Register(brokerURL, username, publicKey string) (*apitypes.RegisterResponse, error) {
+func Register(brokerURL, username, password, publicKey string) (*apitypes.RegisterResponse, error) {
 	brokerURL = normalizeURL(brokerURL)
-	body, _ := json.Marshal(map[string]string{
-		"username":  username,
-		"publicKey": publicKey,
+	body, _ := json.Marshal(apitypes.RegisterRequest{
+		Username:  username,
+		Password:  password,
+		PublicKey: publicKey,
 	})
 	resp, err := http.Post("http://"+brokerURL+"/api/v0/register", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -76,8 +78,58 @@ func Register(brokerURL, username, publicKey string) (*apitypes.RegisterResponse
 	return &result, nil
 }
 
+// Login performs the full authentication flow against the broker:
+// requests a challenge, signs it, and exchanges credentials for a JWT token.
+func Login(brokerURL, username, password string) (string, error) {
+	brokerURL = normalizeURL(brokerURL)
+
+	// Request challenge.
+	challengeBody, _ := json.Marshal(apitypes.LoginChallengeRequest{Username: username})
+	resp, err := http.Post("http://"+brokerURL+"/api/v0/login/challenge", "application/json", bytes.NewReader(challengeBody))
+	if err != nil {
+		return "", fmt.Errorf("login challenge: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("login challenge: broker returned %s", resp.Status)
+	}
+	var challengeResp apitypes.LoginChallengeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&challengeResp); err != nil {
+		return "", fmt.Errorf("login challenge: decode: %w", err)
+	}
+
+	// Sign "login:<username>:<challenge>" with our private key.
+	msg := fmt.Sprintf("login:%s:%s", username, challengeResp.Challenge)
+	sig, err := keys.Sign(msg)
+	if err != nil {
+		return "", fmt.Errorf("login sign: %w", err)
+	}
+
+	// Exchange credentials + signature for a JWT.
+	loginBody, _ := json.Marshal(apitypes.LoginRequest{
+		Username:  username,
+		Password:  password,
+		Challenge: challengeResp.Challenge,
+		Signature: sig,
+	})
+	loginResp, err := http.Post("http://"+brokerURL+"/api/v0/login", "application/json", bytes.NewReader(loginBody))
+	if err != nil {
+		return "", fmt.Errorf("login: %w", err)
+	}
+	defer loginResp.Body.Close()
+	if loginResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("login: broker returned %s", loginResp.Status)
+	}
+	var result apitypes.LoginResponse
+	if err := json.NewDecoder(loginResp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("login: decode: %w", err)
+	}
+	return result.Token, nil
+}
+
 // Connect establishes a persistent WebSocket connection to the broker.
-func Connect(brokerURL, userID string) error {
+// jwtToken must be obtained first via Login.
+func Connect(brokerURL, userID, jwtToken string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -95,6 +147,7 @@ func Connect(brokerURL, userID string) error {
 	headers := http.Header{}
 	headers.Set("X-Username", userID)
 	headers.Set("X-Signature", sig)
+	headers.Set("Authorization", "Bearer "+jwtToken)
 	dialer := &websocket.Dialer{HandshakeTimeout: 5 * time.Second}
 	c, _, err := dialer.Dial("ws://"+brokerURL+"/ws?user_id="+userID, headers)
 	if err != nil {
@@ -110,7 +163,7 @@ func Connect(brokerURL, userID string) error {
 	nc := make(chan []byte, 16)
 	echoChan = make(chan []byte, 16)
 	conn = c
-	session = &Session{UserID: userID, BrokerURL: brokerURL, KeyManager: map[string]*keys.RoomKeyChain{}}
+	session = &Session{UserID: userID, BrokerURL: brokerURL, JWTToken: jwtToken, KeyManager: map[string]*keys.RoomKeyChain{}}
 	notifChan = nc
 
 	go readLoop(c, echoChan, roomMessageChan, nc)
@@ -225,7 +278,7 @@ func RoomMessageChan() <-chan []byte {
 	return roomMessageChan
 }
 
-// signedPost builds a POST request with X-Username and X-Signature headers.
+// signedPost builds a POST request with X-Username, X-Signature, and Authorization headers.
 // apiPath is the bare path (e.g. "/api/v0/rooms") used as the signature payload.
 func signedPost(url, username, apiPath string, body []byte) (*http.Response, error) {
 	sig, err := keys.Sign(username + ":" + apiPath)
@@ -239,10 +292,13 @@ func signedPost(url, username, apiPath string, body []byte) (*http.Response, err
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Username", username)
 	req.Header.Set("X-Signature", sig)
+	if s := CurrentSession(); s != nil && s.JWTToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.JWTToken)
+	}
 	return http.DefaultClient.Do(req)
 }
 
-// signedGet builds a GET request with X-Username and X-Signature headers.
+// signedGet builds a GET request with X-Username, X-Signature, and Authorization headers.
 func signedGet(url, username, apiPath string) (*http.Response, error) {
 	sig, err := keys.Sign(username + ":" + apiPath)
 	if err != nil {
@@ -254,6 +310,9 @@ func signedGet(url, username, apiPath string) (*http.Response, error) {
 	}
 	req.Header.Set("X-Username", username)
 	req.Header.Set("X-Signature", sig)
+	if s := CurrentSession(); s != nil && s.JWTToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.JWTToken)
+	}
 	return http.DefaultClient.Do(req)
 }
 
@@ -435,6 +494,29 @@ func IncrementSessionSentMessageCount() {
 	if session != nil && session.RoomInfo != nil {
 		session.RoomInfo.SentMessageCount++
 	}
+}
+
+var pingClient = &http.Client{Timeout: 5 * time.Second}
+
+// PingBroker sends a ping to the broker's HTTP API and returns an error if unreachable.
+// Returns an error immediately if there is no active session.
+func PingBroker() error {
+	mu.Lock()
+	s := session
+	mu.Unlock()
+	if s == nil {
+		return errors.New("not connected")
+	}
+	body, _ := json.Marshal(map[string]string{"message": "ping"})
+	resp, err := pingClient.Post("http://"+s.BrokerURL+"/api/v0/ping", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ping: broker returned %s", resp.Status)
+	}
+	return nil
 }
 
 // GetUserPublicKey fetches the public key PEM for a given username from the broker.

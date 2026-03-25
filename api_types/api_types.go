@@ -5,6 +5,7 @@ package api_types
 type RegisterRequest struct {
 	Username  string `json:"username" validate:"required"`
 	PublicKey string `json:"publicKey" validate:"required"`
+	Password  string `json:"password" validate:"required"`
 }
 
 type RegisterResponse struct {
@@ -98,4 +99,25 @@ type GetRoomInfoResponse struct {
 	//   - Per-member sent message counts, needed to derive decryption keys via the
 	//     key-chain ratchet (each member's count advances their own ratchet state)
 	SentMessageCount int `json:"sentMessageCount"`
+}
+
+// LoginChallengeRequest presents the username for which the broker responds with a login challenge
+type LoginChallengeRequest struct {
+	Username string `json:"username" validate:"required"`
+}
+
+// LoginChallengeResponse contains the login challenge string and the user's public key PEM
+type LoginChallengeResponse struct {
+	Challenge string `json:"challenge"`
+}
+
+type LoginRequest struct {
+	Username  string `json:"username" validate:"required"`
+	Password  string `json:"password" validate:"required"`
+	Challenge string `json:"challenge" validate:"required"`
+	Signature string `json:"signature" validate:"required"` // login:<username>:<challenge>
+}
+
+type LoginResponse struct {
+	Token string `json:"token"` // JWT token for authenticating future requests
 }

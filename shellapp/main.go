@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
@@ -183,6 +184,22 @@ type notificationMsg wstypes.NotificationPayload
 type echoWsMsg wstypes.EchoPayload
 type roomMessageWsMsg wstypes.RoomMessagePayload
 
+const pingInterval = 15 * time.Second
+
+type pingTickMsg struct{}
+type pingResultMsg struct{ connected bool }
+
+func waitPingTick() tea.Cmd {
+	return tea.Tick(pingInterval, func(time.Time) tea.Msg { return pingTickMsg{} })
+}
+
+func doPing() tea.Cmd {
+	return func() tea.Msg {
+		err := connection.PingBroker()
+		return pingResultMsg{connected: err == nil}
+	}
+}
+
 // waitNotification blocks on the notification channel the readLoop feeds and
 // returns the text as a notificationMsg. The model re-arms this after each hit.
 func waitNotification() tea.Cmd {
@@ -274,7 +291,7 @@ func (m model) Init() tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	}
-	cmds = append(cmds, waitNotification(), waitEcho(), waitRoomMessages())
+	cmds = append(cmds, waitNotification(), waitEcho(), waitRoomMessages(), waitPingTick())
 	return tea.Batch(cmds...)
 }
 
@@ -282,6 +299,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.relayout(msg.Width, msg.Height)
+		return m, nil
+	case pingTickMsg:
+		return m, tea.Batch(doPing(), waitPingTick())
+	case pingResultMsg:
+		userID := ""
+		if s := connection.CurrentSession(); s != nil {
+			userID = s.UserID
+		}
+		connMsg := types.ConnectionStatusMsg{
+			Connected: msg.connected,
+			BrokerURL: connection.BrokerURL(),
+			UserID:    userID,
+		}
+		for _, c := range m.comps {
+			c.Update(connMsg)
+		}
 		return m, nil
 	case types.ConnectedMsg:
 		return m, tea.Batch(waitNotification(), waitEcho(), waitRoomMessages())

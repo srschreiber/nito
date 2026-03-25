@@ -14,7 +14,7 @@ import (
 
 // BrokerCreateRoom creates a room owned by userID, storing the encrypted room key.
 func (b *Broker) BrokerCreateRoom(ctx context.Context, userID, name, encryptedRoomKey string) (*apitypes.CreateRoomResponse, error) {
-	room, err := database.CreateRoom(ctx, b.db, name, userID, encryptedRoomKey)
+	room, err := database.CreateRoom(ctx, b.DB, name, userID, encryptedRoomKey)
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +23,7 @@ func (b *Broker) BrokerCreateRoom(ctx context.Context, userID, name, encryptedRo
 
 // BrokerListUserRooms returns all rooms the user has joined.
 func (b *Broker) BrokerListUserRooms(ctx context.Context, userID string) ([]apitypes.RoomEntry, error) {
-	rows, err := database.ListUserRooms(ctx, b.db, userID)
+	rows, err := database.ListUserRooms(ctx, b.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -41,16 +41,16 @@ func (b *Broker) BrokerInviteUser(ctx context.Context, roomID, invitedByUserID, 
 	if invitedUserID == "" {
 		return nil, fmt.Errorf("user %q not found", invitedUsername)
 	}
-	member, err := database.InviteUserToRoom(ctx, b.db, roomID, invitedUserID, invitedByUserID, encryptedRoomKey)
+	member, err := database.InviteUserToRoom(ctx, b.DB, roomID, invitedUserID, invitedByUserID, encryptedRoomKey)
 	if err != nil {
 		return nil, err
 	}
 
 	// Best-effort: look up room name and inviter username for the notification.
 	var roomName string
-	_ = b.db.QueryRow(ctx, `SELECT name FROM rooms WHERE id = $1`, roomID).Scan(&roomName)
+	_ = b.DB.QueryRow(ctx, `SELECT name FROM rooms WHERE id = $1`, roomID).Scan(&roomName)
 	var inviterUsername string
-	_ = b.db.QueryRow(ctx, `SELECT username FROM users WHERE id = $1`, invitedByUserID).Scan(&inviterUsername)
+	_ = b.DB.QueryRow(ctx, `SELECT username FROM users WHERE id = $1`, invitedByUserID).Scan(&inviterUsername)
 
 	text := fmt.Sprintf(
 		"%s invited you to %q\n\nRun 'room-invites' to list invitations, 'room-accept -r %s' to accept.",
@@ -64,7 +64,7 @@ func (b *Broker) BrokerInviteUser(ctx context.Context, roomID, invitedByUserID, 
 // notifyMembersUpdated fans out a "members_updated" RPC to every connected co-member of userID.
 // Called when a user goes online or offline so room member lists can be refreshed.
 func (b *Broker) notifyMembersUpdated(userID string) {
-	coMembers, err := database.GetCoMemberUserIDs(context.Background(), b.db, userID)
+	coMembers, err := database.GetCoMemberUserIDs(context.Background(), b.DB, userID)
 	if err != nil {
 		log.Printf("notifyMembersUpdated: query co-members for %s: %v", userID, err)
 		return
@@ -108,7 +108,7 @@ func (b *Broker) sendRoomMessage(client *Client, message wstypes.ToBrokerWsMessa
 	// If accepted here and rotation happens immediately after, still allow the message to finish
 	// processing and be stored under the old key version, since it was already in flight.
 
-	members, err := database.ListRoomMembers(context.Background(), b.db, payload.RoomID)
+	members, err := database.ListRoomMembers(context.Background(), b.DB, payload.RoomID)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func (b *Broker) sendNotification(userID, text string) {
 
 // BrokerListRoomMembers returns joined members of a room with their usernames and online status.
 func (b *Broker) BrokerListRoomMembers(ctx context.Context, roomID string) ([]apitypes.RoomMemberEntry, error) {
-	rows, err := database.ListRoomMembersWithUsernames(ctx, b.db, roomID)
+	rows, err := database.ListRoomMembersWithUsernames(ctx, b.DB, roomID)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func (b *Broker) BrokerListRoomMembers(ctx context.Context, roomID string) ([]ap
 
 // BrokerListPendingInvites returns rooms the user has been invited to but not yet joined.
 func (b *Broker) BrokerListPendingInvites(ctx context.Context, userID string) ([]apitypes.PendingInvite, error) {
-	rows, err := database.ListPendingInvites(ctx, b.db, userID)
+	rows, err := database.ListPendingInvites(ctx, b.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -211,12 +211,12 @@ func (b *Broker) BrokerListPendingInvites(ctx context.Context, userID string) ([
 
 // BrokerAcceptInvite sets joined_at = now() for a pending room_members row.
 func (b *Broker) BrokerAcceptInvite(ctx context.Context, userID, roomID string) error {
-	return database.AcceptRoomInvite(ctx, b.db, userID, roomID)
+	return database.AcceptRoomInvite(ctx, b.DB, userID, roomID)
 }
 
 // BrokerGetRoomKey returns the user's encrypted room key for a given room.
 func (b *Broker) BrokerGetRoomKey(ctx context.Context, userID, roomID string) (string, int, error) {
-	key, err := database.GetUserRoomKey(ctx, b.db, userID, roomID)
+	key, err := database.GetUserRoomKey(ctx, b.DB, userID, roomID)
 	if err != nil {
 		return "", -1, err
 	}
@@ -225,7 +225,7 @@ func (b *Broker) BrokerGetRoomKey(ctx context.Context, userID, roomID string) (s
 
 // BrokerGetRoomInfo returns room info for the given user in the given room.
 func (b *Broker) BrokerGetRoomInfo(ctx context.Context, userID, roomID string) (*apitypes.GetRoomInfoResponse, error) {
-	count, err := database.GetUserSentMessageCount(ctx, b.db, roomID, userID)
+	count, err := database.GetUserSentMessageCount(ctx, b.DB, roomID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +234,7 @@ func (b *Broker) BrokerGetRoomInfo(ctx context.Context, userID, roomID string) (
 
 // BrokerGetUserPublicKey returns the public key PEM for the given username.
 func (b *Broker) BrokerGetUserPublicKey(ctx context.Context, username string) (string, error) {
-	pub, err := database.GetUserPublicKeyByUsername(ctx, b.db, username)
+	pub, err := database.GetUserPublicKeyByUsername(ctx, b.DB, username)
 	if err != nil {
 		return "", err
 	}

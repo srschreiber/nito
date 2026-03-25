@@ -8,7 +8,7 @@ import (
 )
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request, req apitypes.RegisterRequest) {
-	resp, err := h.broker.RegisterUser(r.Context(), req.Username, req.PublicKey)
+	resp, err := h.broker.RegisterUser(r.Context(), req.Username, req.Password, req.PublicKey)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

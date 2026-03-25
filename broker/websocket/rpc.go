@@ -26,7 +26,7 @@ func (b *Broker) handleRPC(client *Client, msg wstypes.ToBrokerWsMessage) {
 }
 
 func (b *Broker) verifyRPCSignature(client *Client, msg wstypes.ToBrokerWsMessage) error {
-	pubKey, err := database.GetUserPublicKeyByUsername(context.Background(), b.db, client.Session.Username)
+	pubKey, err := database.GetUserPublicKeyByUsername(context.Background(), b.DB, client.Session.Username)
 	if err != nil || pubKey == nil {
 		return fmt.Errorf("public key not found for user %s", client.Session.Username)
 	}

@@ -12,50 +12,81 @@ import (
 	"github.com/srschreiber/nito/shellapp/keys"
 )
 
-func registerCmd(args []Argument) (string, error) {
+var pendingRegisterBroker string
+var pendingRegisterUsername string
+
+func registerCmd(args []Argument) (Signal, error) {
 	brokerURL := extractArg(args, "b", "broker")
 	if brokerURL == "" {
-		return "", errors.New("register: -b/--broker <url> is required")
+		return SignalNone, errors.New("register: -b/--broker <url> is required")
 	}
 	username := extractArg(args, "u", "user")
 	if username == "" {
-		return "", errors.New("register: -u/--user <username> is required")
+		return SignalNone, errors.New("register: -u/--user <username> is required")
 	}
+	pendingRegisterBroker = brokerURL
+	pendingRegisterUsername = username
+	return SignalNeedRegisterPassword, nil
+}
+
+// CompleteRegister finishes the register flow with the password the user entered.
+func CompleteRegister(password string) (string, Signal, error) {
+	broker := pendingRegisterBroker
+	username := pendingRegisterUsername
+	pendingRegisterBroker = ""
+	pendingRegisterUsername = ""
 
 	publicKey, err := keys.LoadOrGenerate()
 	if err != nil {
-		return "", fmt.Errorf("register: key setup failed: %w", err)
+		return "", SignalNone, fmt.Errorf("register: key setup failed: %w", err)
 	}
-
-	resp, err := connection.Register(brokerURL, username, publicKey)
+	resp, err := connection.Register(broker, username, password, publicKey)
 	if err != nil {
-		return "", err
+		return "", SignalNone, err
 	}
-
 	if resp.AlreadyRegistered {
-		return fmt.Sprintf("user %q already registered (id: %s)", username, resp.ID), nil
+		return fmt.Sprintf("user %q already registered (id: %s)", username, resp.ID), SignalNone, nil
 	}
-	return fmt.Sprintf("registered %q successfully (id: %s)", username, resp.ID), nil
+	return fmt.Sprintf("registered %q successfully (id: %s)", username, resp.ID), SignalNone, nil
 }
 
-func connectCmd(args []Argument) (string, error) {
+// pendingLogin holds broker/username across the two-step login flow (args → password prompt).
+var pendingLoginBroker string
+var pendingLoginUsername string
+
+// loginCmd parses login arguments and signals the TUI to prompt for a hidden password.
+func loginCmd(args []Argument) (Signal, error) {
 	brokerURL := extractArg(args, "b", "broker")
 	if brokerURL == "" {
-		return "", errors.New("connect: -b/--broker <url> is required")
+		return SignalNone, errors.New("login: -b/--broker <url> is required")
 	}
-	userID := extractArg(args, "u", "user")
-	if userID == "" {
-		return "", errors.New("connect: -u/--user <id> is required")
+	username := extractArg(args, "u", "user")
+	if username == "" {
+		return SignalNone, errors.New("login: -u/--user <username> is required")
 	}
 	if !keys.HaveKeys() {
-		return "", errors.New("connect: no keys found — run register first")
+		return SignalNone, errors.New("login: no keys found — run register first")
 	}
+	pendingLoginBroker = brokerURL
+	pendingLoginUsername = username
+	return SignalNeedPassword, nil
+}
 
-	if err := connection.Connect(brokerURL, userID); err != nil {
-		return "", fmt.Errorf("connect: %w", err)
+// CompleteLogin finishes the login flow with the password the user entered.
+func CompleteLogin(password string) (string, Signal, error) {
+	broker := pendingLoginBroker
+	username := pendingLoginUsername
+	pendingLoginBroker = ""
+	pendingLoginUsername = ""
+
+	token, err := connection.Login(broker, username, password)
+	if err != nil {
+		return "", SignalNone, err
 	}
-
-	return fmt.Sprintf("connected to %s as %q", connection.BrokerURL(), userID), nil
+	if err := connection.Connect(broker, username, token); err != nil {
+		return "", SignalNone, fmt.Errorf("connect: %w", err)
+	}
+	return fmt.Sprintf("logged in to %s as %q", connection.BrokerURL(), username), SignalConnected, nil
 }
 
 func ping(args []Argument) (string, error) {

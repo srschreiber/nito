@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,7 +32,8 @@ type Client struct {
 
 type Broker struct {
 	Address          string
-	db               *pgxpool.Pool
+	DB               *pgxpool.Pool
+	JWTVerifier      func(tokenString string) (username string, err error)
 	upgrader         websocket.Upgrader
 	mu               sync.RWMutex
 	clientMap        map[string]*Client
@@ -59,7 +61,7 @@ func NewBroker(ctx context.Context, address string, db *pgxpool.Pool) *Broker {
 	outbound.Start()
 	return &Broker{
 		Address:          address,
-		db:               db,
+		DB:               db,
 		clientMap:        make(map[string]*Client),
 		upgrader:         websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		inflightMessages: outbound,
@@ -67,9 +69,9 @@ func NewBroker(ctx context.Context, address string, db *pgxpool.Pool) *Broker {
 }
 
 // RegisterUser creates a new user in the DB, or returns the existing one if the username is taken.
-func (b *Broker) RegisterUser(ctx context.Context, username, publicKey string) (*apitypes.RegisterResponse, error) {
+func (b *Broker) RegisterUser(ctx context.Context, username, password, publicKey string) (*apitypes.RegisterResponse, error) {
 	var existing dbtypes.User
-	err := b.db.QueryRow(ctx,
+	err := b.DB.QueryRow(ctx,
 		`SELECT id, username, public_key, updated_at, created_at FROM users WHERE username = $1`,
 		username,
 	).Scan(&existing.ID, &existing.Username, &existing.PublicKey, &existing.UpdatedAt, &existing.CreatedAt)
@@ -77,7 +79,7 @@ func (b *Broker) RegisterUser(ctx context.Context, username, publicKey string) (
 		return &apitypes.RegisterResponse{ID: existing.ID, Username: existing.Username, AlreadyRegistered: true}, nil
 	}
 
-	user, err := database.CreateUser(ctx, b.db, username, &publicKey)
+	user, err := database.CreateUser(ctx, b.DB, username, &password, &publicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +89,7 @@ func (b *Broker) RegisterUser(ctx context.Context, username, publicKey string) (
 // LookupUserIDByUsername resolves a username to its UUID. Returns "" if not found.
 func (b *Broker) LookupUserIDByUsername(ctx context.Context, username string) string {
 	var id string
-	_ = b.db.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, username).Scan(&id)
+	_ = b.DB.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, username).Scan(&id)
 	return id
 }
 
@@ -122,12 +124,31 @@ func (b *Broker) WsConnect(ctx context.Context, w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Verify JWT session token.
+	if b.JWTVerifier != nil {
+		authHeader := r.Header.Get("Authorization")
+		const bearerPrefix = "Bearer "
+		if !strings.HasPrefix(authHeader, bearerPrefix) {
+			http.Error(w, "missing or invalid Authorization header", http.StatusUnauthorized)
+			return
+		}
+		jwtUsername, err := b.JWTVerifier(authHeader[len(bearerPrefix):])
+		if err != nil {
+			http.Error(w, "invalid JWT: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+		if jwtUsername != username {
+			http.Error(w, "JWT username mismatch", http.StatusUnauthorized)
+			return
+		}
+	}
+
 	sigB64 := r.Header.Get("X-Signature")
 	if sigB64 == "" {
 		http.Error(w, "missing X-Signature header", http.StatusUnauthorized)
 		return
 	}
-	pubKey, err := database.GetUserPublicKeyByUsername(ctx, b.db, username)
+	pubKey, err := database.GetUserPublicKeyByUsername(ctx, b.DB, username)
 	if err != nil || pubKey == nil {
 		http.Error(w, "user has no public key", http.StatusUnauthorized)
 		return

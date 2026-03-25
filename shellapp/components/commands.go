@@ -26,6 +26,7 @@ type CommandComponent struct {
 	Placeholder    string
 	focused        bool
 	chatMode       bool
+	passwordMode   bool
 	textFieldValue string
 	cursorPos      int
 	cursorVisible  bool
@@ -179,16 +180,66 @@ func (l *CommandComponent) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
+// pendingPasswordSignal tracks which flow the current password prompt belongs to.
+var pendingPasswordSignal commands.Signal
+
+func (l *CommandComponent) handlePasswordSubmit(password string) tea.Cmd {
+	var out string
+	var signal commands.Signal
+	var err error
+
+	switch pendingPasswordSignal {
+	case commands.SignalNeedRegisterPassword:
+		out, signal, err = commands.CompleteRegister(password)
+	default:
+		out, signal, err = commands.CompleteLogin(password)
+	}
+	pendingPasswordSignal = commands.SignalNone
+
+	entries := []historyEntry{{text: "> [password]"}}
+	if err != nil {
+		entries = append(entries, historyEntry{text: err.Error(), isResponse: true})
+	} else if out != "" {
+		entries = append(entries, historyEntry{text: out, isResponse: true})
+	}
+
+	userID := ""
+	if s := connection.CurrentSession(); s != nil {
+		userID = s.UserID
+	}
+	connMsg := types.ConnectionStatusMsg{
+		Connected: connection.IsConnected(),
+		BrokerURL: connection.BrokerURL(),
+		UserID:    userID,
+	}
+	emitConn := func() tea.Msg { return connMsg }
+
+	if signal == commands.SignalConnected {
+		return tea.Batch(
+			func() tea.Msg { return AppendHistoryMsg{Entries: entries} },
+			emitConn,
+			func() tea.Msg { return types.ConnectedMsg{} },
+		)
+	}
+	return tea.Batch(func() tea.Msg { return AppendHistoryMsg{Entries: entries} }, emitConn)
+}
+
 func (l *CommandComponent) handleEnter() tea.Cmd {
 	input := l.textFieldValue
+	l.textFieldValue = ""
+	l.cursorPos = 0
+
+	if l.passwordMode {
+		l.passwordMode = false
+		l.Placeholder = placeholderCmd
+		return l.handlePasswordSubmit(input)
+	}
 
 	l.cmdHistory = append(l.cmdHistory, input)
 	if len(l.cmdHistory) > maxCmdHistory {
 		l.cmdHistory = l.cmdHistory[1:]
 	}
 	l.historyIdx = -1
-	l.textFieldValue = ""
-	l.cursorPos = 0
 
 	// Mode-switch commands are intercepted before anything else.
 	if input == "/chat" {
@@ -261,6 +312,12 @@ func (l *CommandComponent) handleEnter() tea.Cmd {
 			emitConn,
 			func() tea.Msg { return types.RoomsFetchMsg{} },
 		)
+	case commands.SignalNeedPassword, commands.SignalNeedRegisterPassword:
+		pendingPasswordSignal = signal
+		l.passwordMode = true
+		l.Placeholder = "Password:"
+		entries = append(entries, historyEntry{text: "Password:", isResponse: true})
+		return tea.Batch(func() tea.Msg { return AppendHistoryMsg{Entries: entries} }, emitConn)
 	case commands.SignalConnected:
 		return tea.Batch(
 			func() tea.Msg { return AppendHistoryMsg{Entries: entries} },
@@ -347,6 +404,9 @@ func (l *CommandComponent) completionTemplate() string {
 func (l *CommandComponent) Render() string {
 	prompt := styles.PromptStyle.Render("> ")
 	runes := []rune(l.textFieldValue)
+	if l.passwordMode {
+		runes = []rune(strings.Repeat("*", len(runes)))
+	}
 	ghost := l.ghostSuffix()
 
 	var render string

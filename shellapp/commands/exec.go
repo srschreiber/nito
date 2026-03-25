@@ -13,7 +13,7 @@ const (
 	CmdHistory     = "history"
 	CmdEcho        = "echo"
 	CmdRegister    = "register"
-	CmdConnect     = "connect"
+	CmdLogin       = "login"
 	CmdPing        = "ping"
 	CmdWcid        = "wcid"
 	CmdRoomCreate  = "room-create"
@@ -116,14 +116,11 @@ func ExecCommand(cmd string) (string, Signal, error) {
 		out, err := echoCmd(parsedCommand.Args)
 		return out, SignalNone, err
 	case CmdRegister:
-		out, err := registerCmd(parsedCommand.Args)
-		return out, SignalNone, err
-	case CmdConnect:
-		out, err := connectCmd(parsedCommand.Args)
-		if err != nil {
-			return out, SignalNone, err
-		}
-		return out, SignalConnected, nil
+		sig, err := registerCmd(parsedCommand.Args)
+		return "", sig, err
+	case CmdLogin:
+		sig, err := loginCmd(parsedCommand.Args)
+		return "", sig, err
 	case CmdPing:
 		out, err := ping(parsedCommand.Args)
 		return out, SignalNone, err

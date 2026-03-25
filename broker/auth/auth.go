@@ -33,3 +33,7 @@ func VerifySignature(publicKeyPEM, message, signatureB64 string) error {
 	h := sha256.Sum256([]byte(message))
 	return rsa.VerifyPSS(rsaPub, crypto.SHA256, h[:], sig, nil)
 }
+
+func FormatMessageForLoginSigning(username, challenge string) string {
+	return fmt.Sprintf("login:%s:%s", username, challenge)
+}

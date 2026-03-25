@@ -8,12 +8,12 @@ import (
 )
 
 // CreateUser inserts a new user with an optional public key used for encrypting room keys.
-func CreateUser(ctx context.Context, conn Conn, username string, publicKey *string) (*dbtypes.User, error) {
+func CreateUser(ctx context.Context, conn Conn, username string, password, publicKey *string) (*dbtypes.User, error) {
 	row := conn.QueryRow(ctx, `
-		INSERT INTO users (username, public_key)
-		VALUES ($1, $2)
+		INSERT INTO users (username, password_hash, public_key)
+		VALUES ($1, crypt($2, gen_salt('bf', 12)), $3)
 		RETURNING id, username, public_key, updated_at, created_at
-	`, username, publicKey)
+	`, username, password, publicKey)
 
 	user, err := ScanRow[dbtypes.User](row)
 	if err != nil {

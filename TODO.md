@@ -17,7 +17,13 @@ Room Connect
     3. once key is assigned to users marked as pending_join, update status to active
 
 - work on room key rotation, initiated by manual, or specific triggers such as new user leaves or joins
-
+- 
+VOIP
+- Use Pion WebRTC for encrypted voip
+- research Jitter Buffer for voip system, Pion WebRTC probably use that
+- two speakers at once: mix audio streams together
+- WebRTC handles encryption for us using DTLS handshake (diffie hellman style)
+- - mixing will happen on client side, since broker cant mix encrypted streams.
 
 # Rotation algorithm
 1. room rotation lock acquired
@@ -36,3 +42,18 @@ nice to haves:
 - add sem version so client can check if it's compatible with the server before making requests, o.w. exit with error to update
 - command auto complete, that also sets up default long form parameters
 - make it so the command stack only has commands, not things like chat
+
+
+TODO login flow
+- client says it wants to log in as username
+- broker returns a random nonce/challenge to avoid replay attacks
+client sends:
+- username
+- raw password over TLS
+- challenge
+- signature over something like login:<username>:<challenge>
+broker:
+- verifies the challenge is valid, fresh, and unused
+- verifies the signature against the stored public key
+- verifies password_hash = crypt($password, password_hash)
+- if all good, broker returns JWT/session

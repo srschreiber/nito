@@ -8,13 +8,15 @@ import (
 type Signal int
 
 const (
-	SignalNone         Signal = 0
-	SignalExit         Signal = 1
-	SignalClear        Signal = 2
-	SignalRefreshRooms Signal = 3
-	SignalRoomSelected Signal = 4
-	SignalConnected    Signal = 5
-	SignalJump         Signal = 6
+	SignalNone                 Signal = 0
+	SignalExit                 Signal = 1
+	SignalClear                Signal = 2
+	SignalRefreshRooms         Signal = 3
+	SignalRoomSelected         Signal = 4
+	SignalConnected            Signal = 5
+	SignalJump                 Signal = 6
+	SignalNeedPassword         Signal = 7
+	SignalNeedRegisterPassword Signal = 8
 )
 
 type ArgDef struct {
@@ -36,9 +38,9 @@ var Registry = []CommandDef{
 		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:7070)"},
 		{Short: "u", Long: "user", Desc: "user ID to register"},
 	}},
-	{Name: CmdConnect, Desc: "establish a persistent WebSocket connection to a broker", Args: []ArgDef{
+	{Name: CmdLogin, Desc: "authenticate with a broker and establish a WebSocket connection (prompts for password)", Args: []ArgDef{
 		{Short: "b", Long: "broker", Desc: "broker base URL (e.g. localhost:7070)"},
-		{Short: "u", Long: "user", Desc: "user ID to connect as (must be registered first)"},
+		{Short: "u", Long: "user", Desc: "username to log in as (must be registered first)"},
 	}},
 	{Name: CmdEcho, Desc: "send a message to the broker and receive it back (max 1024 chars)", Args: []ArgDef{
 		{Short: "m", Long: "message", Desc: "message text to echo"},
