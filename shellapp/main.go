@@ -334,8 +334,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		cmds = append(cmds, waitRoomMessages())
 		if m.selectedRoomID != nil && msg.RoomID == *m.selectedRoomID {
-			text := fmt.Sprintf("[%s]: %s", msg.FromUsername, msg.EncryptedText)
-			cmds = append(cmds, func() tea.Msg { return components.NewResponseAppendMsg(text) })
+			if msg.MessageType == wstypes.MessageTypeImage {
+				header := fmt.Sprintf("[%s] sent an image:", msg.FromUsername)
+				ascii := msg.EncryptedText // already decrypted by waitRoomMessages
+				cmds = append(cmds, func() tea.Msg {
+					return components.NewImageAppendMsg(header, ascii)
+				})
+			} else {
+				text := fmt.Sprintf("[%s]: %s", msg.FromUsername, msg.EncryptedText)
+				cmds = append(cmds, func() tea.Msg { return components.NewResponseAppendMsg(text) })
+			}
 		}
 		return m, tea.Batch(cmds...)
 	case types.RoomSelectedMsg:

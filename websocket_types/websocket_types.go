@@ -45,12 +45,18 @@ type EchoPayload struct {
 //PRIMARY KEY (room_id, sender_user_id, key_version_num, sender_message_count)
 //);
 
+const (
+	MessageTypeText  = "text"
+	MessageTypeImage = "image"
+)
+
 type RoomMessagePayload struct {
 	RoomID             string `json:"roomId" validate:"required"`
 	RoomKeyVersion     int    `json:"roomKeyVersion" validate:"required" description:"the version, or epoch, of the room key used to encrypt this message"`
 	SenderMessageCount int    `json:"senderMessageCount" validate:"required" description:"a strictly increasing count of messages sent by this user in this room for encryption key generation purposes."`
 	FromUsername       string `json:"fromUsername" validate:"required"`
 	EncryptedText      string `json:"encryptedText" validate:"required"`
+	MessageType        string `json:"messageType,omitempty"` // "text" (default) or "image"
 }
 
 type NotificationPayload struct {

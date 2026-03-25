@@ -34,6 +34,15 @@ func NewResponseAppendMsg(text string) AppendHistoryMsg {
 	return AppendHistoryMsg{Entries: []historyEntry{{text: text, isResponse: true}}}
 }
 
+// NewImageAppendMsg builds an AppendHistoryMsg for an incoming image: a styled
+// header line followed by the raw ANSI ASCII-art string.
+func NewImageAppendMsg(header, ascii string) AppendHistoryMsg {
+	return AppendHistoryMsg{Entries: []historyEntry{
+		{text: header, isResponse: true},
+		{text: ascii, isRaw: true},
+	}}
+}
+
 type ConversationHistory struct {
 	entries  []historyEntry
 	scroll   int // lines scrolled up from the bottom (0 = pinned to bottom)

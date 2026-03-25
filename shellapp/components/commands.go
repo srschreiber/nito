@@ -378,13 +378,14 @@ func imageOp(filename string, height int) tea.Cmd {
 		}
 	}
 
-	text := ascii
-	return func() tea.Msg {
-		return AppendHistoryMsg{Entries: []historyEntry{
-			{text: "> .image " + filename},
-			{text: text, isRaw: true},
-		}}
+	entries := []historyEntry{
+		{text: "> .image " + filename},
+		{text: ascii, isRaw: true},
 	}
+	if err := commands.SendRoomImage(ascii); err != nil {
+		entries = append(entries, historyEntry{text: err.Error(), isResponse: true})
+	}
+	return func() tea.Msg { return AppendHistoryMsg{Entries: entries} }
 }
 
 // fitAspect returns width and height that fit within maxW×maxH while preserving
