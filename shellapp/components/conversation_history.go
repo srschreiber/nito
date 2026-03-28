@@ -34,6 +34,15 @@ func NewResponseAppendMsg(text string) AppendHistoryMsg {
 	return AppendHistoryMsg{Entries: []historyEntry{{text: text, isResponse: true}}}
 }
 
+// NewBulkResponseAppendMsg builds an AppendHistoryMsg for multiple response lines (e.g. historic messages).
+func NewBulkResponseAppendMsg(texts []string) AppendHistoryMsg {
+	entries := make([]historyEntry, len(texts))
+	for i, t := range texts {
+		entries[i] = historyEntry{text: t, isResponse: true}
+	}
+	return AppendHistoryMsg{Entries: entries}
+}
+
 // NewImageAppendMsg builds an AppendHistoryMsg for an incoming image: a styled
 // header line followed by the raw ANSI ASCII-art string.
 func NewImageAppendMsg(header, ascii string) AppendHistoryMsg {

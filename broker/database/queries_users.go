@@ -72,3 +72,13 @@ func GetUserPublicKeyByUsername(ctx context.Context, conn Conn, username string)
 	}
 	return publicKey, nil
 }
+
+func GetUserIDByUsername(ctx context.Context, conn Conn, username string) (string, error) {
+	var userID string
+	err := conn.QueryRow(ctx, `
+		SELECT id FROM users WHERE username = $1`, username).Scan(&userID)
+	if err != nil {
+		return "", fmt.Errorf("get user id by username: %w", err)
+	}
+	return userID, nil
+}

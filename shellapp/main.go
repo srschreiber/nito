@@ -11,6 +11,7 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/srschreiber/nito/shellapp/components"
 	"github.com/srschreiber/nito/shellapp/connection"
+	"github.com/srschreiber/nito/shellapp/keys"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
 	wstypes "github.com/srschreiber/nito/websocket_types"
@@ -357,6 +358,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+		cmds = append(cmds, loadRoomHistory(roomID))
 		return m, tea.Batch(cmds...)
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -404,6 +406,62 @@ func (m model) View() tea.View {
 	s += "\n" + footer
 
 	return tea.NewView(styles.AppStyle.Render(s))
+}
+
+// loadRoomHistory fetches the most recent 50 messages for roomID, decrypts them,
+// and returns an AppendHistoryMsg containing the plaintext lines.
+func loadRoomHistory(roomID string) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := connection.GetRoomMessages(roomID, 50)
+		if err != nil {
+			return components.NewResponseAppendMsg("(history unavailable: " + err.Error() + ")")
+		}
+		if len(resp.UserMessages) == 0 {
+			return components.NewResponseAppendMsg("(no message history)")
+		}
+
+		// Build one RoomKeyChain per key version using the user's encrypted copies.
+		keyChains := make(map[int]*keys.RoomKeyChain)
+		for _, rk := range resp.RoomKeys {
+			rawKey, err := keys.DecryptRoomKey(rk.EncryptedRoomKey)
+			if err != nil {
+				continue
+			}
+			keyChains[rk.KeyVersion] = keys.NewRoomKeyChain(rawKey)
+		}
+
+		var entries []components.AppendHistoryMsg
+		for _, msg := range resp.UserMessages {
+			chain, ok := keyChains[msg.RoomKeyVersion]
+			if !ok {
+				continue
+			}
+			ct, err := base64.StdEncoding.DecodeString(msg.EncryptedMessage)
+			if err != nil {
+				continue
+			}
+			plaintext, err := chain.DecryptHistoricalMessage(ct, msg.SenderUsername, &msg.SenderMessageCount)
+			if err != nil {
+				continue
+			}
+			if msg.MessageType == wstypes.MessageTypeImage {
+				header := fmt.Sprintf("[%s] sent an image:", msg.SenderUsername)
+				entries = append(entries, components.NewImageAppendMsg(header, string(plaintext)))
+			} else {
+				entries = append(entries, components.NewResponseAppendMsg(fmt.Sprintf("[%s]: %s", msg.SenderUsername, string(plaintext))))
+			}
+		}
+
+		if len(entries) == 0 {
+			return nil
+		}
+		// Flatten all entries into one AppendHistoryMsg.
+		var combined components.AppendHistoryMsg
+		for _, e := range entries {
+			combined.Entries = append(combined.Entries, e.Entries...)
+		}
+		return combined
+	}
 }
 
 func main() {

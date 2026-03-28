@@ -36,6 +36,11 @@ type Session struct {
 	RoomInfo         *RoomInfo                     // info about this user's activity in the selected room
 }
 
+// v0 returns the full HTTP URL for the given /api/v0 path (e.g. "/rooms").
+func (s *Session) v0(path string) string {
+	return "http://" + s.BrokerURL + "/api/v0" + path
+}
+
 var (
 	mu              sync.Mutex
 	wmu             sync.Mutex // serializes all writes to conn
@@ -328,7 +333,7 @@ func CreateRoom(name, encryptedRoomKey string) (id, roomName string, err error) 
 		"userId":           s.UserID,
 		"encryptedRoomKey": encryptedRoomKey,
 	})
-	resp, err := signedPost("http://"+s.BrokerURL+"/api/v0/rooms", s.UserID, "/api/v0/rooms", body)
+	resp, err := signedPost(s.v0("/rooms"), s.UserID, "/api/v0/rooms", body)
 	if err != nil {
 		return "", "", fmt.Errorf("create room: %w", err)
 	}
@@ -353,7 +358,7 @@ func ListRooms() ([]apitypes.RoomEntry, error) {
 		return nil, errors.New("not connected")
 	}
 	resp, err := signedGet(
-		"http://"+s.BrokerURL+"/api/v0/rooms/list?user_id="+s.UserID,
+		s.v0("/rooms/list?user_id="+s.UserID),
 		s.UserID,
 		"/api/v0/rooms/list",
 	)
@@ -508,7 +513,7 @@ func PingBroker() error {
 		return errors.New("not connected")
 	}
 	body, _ := json.Marshal(map[string]string{"message": "ping"})
-	resp, err := pingClient.Post("http://"+s.BrokerURL+"/api/v0/ping", "application/json", bytes.NewReader(body))
+	resp, err := pingClient.Post(s.v0("/ping"), "application/json", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -525,7 +530,7 @@ func GetUserPublicKey(username string) (string, error) {
 	if s == nil {
 		return "", errors.New("not connected")
 	}
-	resp, err := http.Get("http://" + s.BrokerURL + "/api/v0/users/public-key?username=" + username)
+	resp, err := http.Get(s.v0("/users/public-key?username=" + username))
 	if err != nil {
 		return "", fmt.Errorf("get public key: %w", err)
 	}
@@ -549,7 +554,7 @@ func getMyRoomKey(roomID string) (encryptedKey string, keyVersion int, err error
 		return "", 0, errors.New("not connected")
 	}
 	resp, err := signedGet(
-		"http://"+s.BrokerURL+"/api/v0/rooms/key?room_id="+roomID,
+		s.v0("/rooms/key?room_id="+roomID),
 		s.UserID,
 		"/api/v0/rooms/key",
 	)
@@ -574,7 +579,7 @@ func getRoomInfo(roomID string) (*RoomInfo, error) {
 		return nil, errors.New("not connected")
 	}
 	resp, err := signedGet(
-		"http://"+s.BrokerURL+"/api/v0/rooms/info?room_id="+roomID,
+		s.v0("/rooms/info?room_id="+roomID),
 		s.UserID,
 		"/api/v0/rooms/info",
 	)
@@ -603,7 +608,7 @@ func InviteUser(roomID, invitedUsername, encryptedRoomKey string) error {
 		"invitedUsername":  invitedUsername,
 		"encryptedRoomKey": encryptedRoomKey,
 	})
-	resp, err := signedPost("http://"+s.BrokerURL+"/api/v0/rooms/invite", s.UserID, "/api/v0/rooms/invite", body)
+	resp, err := signedPost(s.v0("/rooms/invite"), s.UserID, "/api/v0/rooms/invite", body)
 	if err != nil {
 		return fmt.Errorf("invite user: %w", err)
 	}
@@ -621,7 +626,7 @@ func ListRoomMembers(roomID string) ([]apitypes.RoomMemberEntry, error) {
 		return nil, errors.New("not connected")
 	}
 	resp, err := signedGet(
-		"http://"+s.BrokerURL+"/api/v0/rooms/members?room_id="+roomID,
+		s.v0("/rooms/members?room_id="+roomID),
 		s.UserID,
 		"/api/v0/rooms/members",
 	)
@@ -648,7 +653,7 @@ func ListPendingInvites() ([]apitypes.PendingInvite, error) {
 		return nil, errors.New("not connected")
 	}
 	resp, err := signedGet(
-		"http://"+s.BrokerURL+"/api/v0/rooms/invites?user_id="+s.UserID,
+		s.v0("/rooms/invites?user_id="+s.UserID),
 		s.UserID,
 		"/api/v0/rooms/invites",
 	)
@@ -668,6 +673,32 @@ func ListPendingInvites() ([]apitypes.PendingInvite, error) {
 	return result.Invites, nil
 }
 
+// GetRoomMessages fetches the most recent limit messages from the given room along with
+// the encrypted room keys needed to decrypt them.
+func GetRoomMessages(roomID string, limit int) (*apitypes.GetRoomMessagesResponse, error) {
+	s := CurrentSession()
+	if s == nil {
+		return nil, errors.New("not connected")
+	}
+	body, _ := json.Marshal(apitypes.GetRoomMessagesRequest{
+		RoomID: roomID,
+		Limit:  &limit,
+	})
+	resp, err := signedPost(s.v0("/rooms/messages"), s.UserID, "/api/v0/rooms/messages", body)
+	if err != nil {
+		return nil, fmt.Errorf("get room messages: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get room messages: broker returned %s", resp.Status)
+	}
+	var result apitypes.GetRoomMessagesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("get room messages: decode: %w", err)
+	}
+	return &result, nil
+}
+
 // AcceptInvite accepts a pending room invitation.
 func AcceptInvite(roomID string) error {
 	s := CurrentSession()
@@ -675,7 +706,7 @@ func AcceptInvite(roomID string) error {
 		return errors.New("not connected")
 	}
 	body, _ := json.Marshal(map[string]string{"roomId": roomID})
-	resp, err := signedPost("http://"+s.BrokerURL+"/api/v0/rooms/invites/accept", s.UserID, "/api/v0/rooms/invites/accept", body)
+	resp, err := signedPost(s.v0("/rooms/invites/accept"), s.UserID, "/api/v0/rooms/invites/accept", body)
 	if err != nil {
 		return fmt.Errorf("accept invite: %w", err)
 	}

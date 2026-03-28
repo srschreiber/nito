@@ -73,3 +73,14 @@ type UserRoomKey struct {
 	UpdatedAt         time.Time
 	CreatedAt         time.Time
 }
+
+type DBRoomMessage struct {
+	RoomID             string
+	KeyVersionNum      int
+	SenderMessageCount int
+	SenderUserID       string
+	SenderUserName     string
+	EncryptedText      string
+	MessageType        string
+	CreatedAt          time.Time // RFC3339 format
+}

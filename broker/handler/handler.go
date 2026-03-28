@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
@@ -14,11 +15,12 @@ var validate = validator.New(validator.WithRequiredStructEnabled())
 type Handler struct {
 	broker *brokerws.Broker
 	pool   *pgxpool.Pool
+	ctx    context.Context
 }
 
 // New creates a Handler with the given broker and pool.
 func New(broker *brokerws.Broker, pool *pgxpool.Pool) *Handler {
-	return &Handler{broker: broker, pool: pool}
+	return &Handler{broker: broker, pool: pool, ctx: context.Background()}
 }
 
 // Register registers all API routes on the default mux.
@@ -39,5 +41,6 @@ func (h *Handler) Register() {
 	http.HandleFunc("/api/v0/rooms/invites", withSignature(h.pool, h.listPendingInvites))
 	http.HandleFunc("/api/v0/rooms/invites/accept", withSignature(h.pool, withValidation(h.acceptInvite)))
 	http.HandleFunc("/api/v0/users/public-key", h.getUserPublicKey)
+	http.HandleFunc("/api/v0/rooms/messages", withSignature(h.pool, withValidation(h.GetRoomMessages)))
 	http.HandleFunc("/ws", h.ws)
 }

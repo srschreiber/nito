@@ -59,3 +59,23 @@ func GetUserRoomKey(ctx context.Context, conn Conn, userID, roomID string) (*dbt
 	}
 	return &key, nil
 }
+
+func GetAllUserRoomKeys(ctx context.Context, conn Conn, userID, roomID string) ([]dbtypes.UserRoomKey, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT user_id, room_id, room_key_version_num, encrypted_room_key, updated_at, created_at
+		FROM user_room_keys
+		WHERE user_id = $1 AND room_id = $2
+		ORDER BY room_key_version_num ASC
+	`, userID, roomID)
+
+	if err != nil {
+		return nil, fmt.Errorf("get all user room keys: %w", err)
+	}
+	defer rows.Close()
+
+	keys, err := ScanRows[dbtypes.UserRoomKey](rows)
+	if err != nil {
+		return nil, fmt.Errorf("get all user room keys: %w", err)
+	}
+	return keys, nil
+}
