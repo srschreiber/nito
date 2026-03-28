@@ -1,0 +1,1 @@
+ALTER TABLE room_messages ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT 'text'
