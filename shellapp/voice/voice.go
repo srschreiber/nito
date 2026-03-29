@@ -75,6 +75,7 @@ type voiceSession struct {
 	roomID    string
 	pc        *webrtc.PeerConnection
 	sendTrack *webrtc.TrackLocalStaticRTP
+	player    oto.Player
 	pw        *io.PipeWriter
 	cancel    context.CancelFunc
 	answerCh  chan string // receives the initial SDP answer; closed after use
@@ -158,10 +159,16 @@ func Join(roomID string) error {
 		}
 		defer dec.close()
 		pcmBuf := make([]int16, opusFrameSamples*numChannels)
+		first := true
 		for {
 			pkt, _, err := remote.ReadRTP()
 			if err != nil {
+				log.Printf("voice: ReadRTP error: %v", err)
 				return
+			}
+			if first {
+				log.Printf("voice: first RTP packet received, payload %d bytes", len(pkt.Payload))
+				first = false
 			}
 			n, err := dec.decode(pkt.Payload, pcmBuf)
 			if err != nil {
@@ -169,6 +176,7 @@ func Join(roomID string) error {
 				continue
 			}
 			if _, err := pw.Write(int16ToBytes(pcmBuf[:n*numChannels])); err != nil {
+				log.Printf("voice: pipe write error: %v", err)
 				return
 			}
 		}
@@ -220,7 +228,7 @@ func Join(roomID string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	sess := &voiceSession{
 		roomID: roomID, pc: pc, sendTrack: sendTrack,
-		pw: pw, cancel: cancel, answerCh: answerCh,
+		player: player, pw: pw, cancel: cancel, answerCh: answerCh,
 	}
 	mu.Lock()
 	activeSession = sess
@@ -371,8 +379,10 @@ func captureAndSend(ctx context.Context, track *webrtc.TrackLocalStaticRTP) {
 	defer enc.close()
 	enc.setBitrate(32000)
 	enc.setPacketLossPerc(5)
+	log.Printf("voice: captureAndSend started, encoder ready")
 
 	reader := audioTrack.(*media.AudioTrack).NewReader(false)
+	firstSend := true
 	var seq uint32
 	var ts uint32
 	var pcmAccum []int16
@@ -418,6 +428,10 @@ func captureAndSend(ctx context.Context, track *webrtc.TrackLocalStaticRTP) {
 					Marker:         true,
 				},
 				Payload: opusBuf[:n],
+			}
+			if firstSend {
+				log.Printf("voice: first RTP packet sent, %d opus bytes", n)
+				firstSend = false
 			}
 			if err := track.WriteRTP(pkt); err != nil {
 				log.Printf("voice: write rtp: %v", err)
