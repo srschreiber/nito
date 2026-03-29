@@ -19,19 +19,24 @@
 //
 // Audio path (send):
 //
-//	mic PCM → Opus encode → RTP → broker (SFU) → other peers
+//	mic PCM → Opus encode → AES-256-GCM encrypt → RTP → broker (SFU) → other peers
 //
 // Audio path (receive):
 //
-//	broker → RTP → Opus decode → PCM → speakers
+//	broker → RTP → AES-256-GCM decrypt → Opus decode → PCM → speakers
 //
-// TODO: add E2EE — encrypt RTP payloads with AES-256-GCM keyed via
-// HKDF(roomKey, "voice") before sending, decrypt after receiving.
-// Also apply HKDF(roomKey, "chat") for message encryption.
+// The broker never sees plaintext audio; it only forwards encrypted RTP payloads./
+// The AES-256-GCM key is derived via HKDF(roomKey, "voice").
+//
+// TODO: apply HKDF(roomKey, "chat") for message encryption too.
 package voice
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,6 +51,7 @@ import (
 	"github.com/pion/mediadevices/pkg/wave"
 	rtppkg "github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
+	"golang.org/x/crypto/hkdf"
 
 	wstypes "github.com/srschreiber/nito/shared/websocket_types"
 	"github.com/srschreiber/nito/shellapp/connection"
@@ -75,6 +81,7 @@ type voiceSession struct {
 	roomID    string
 	pc        *webrtc.PeerConnection
 	sendTrack *webrtc.TrackLocalStaticRTP
+	aead      cipher.AEAD
 	player    oto.Player
 	pw        *io.PipeWriter
 	cancel    context.CancelFunc
@@ -110,6 +117,39 @@ func newPC() (*webrtc.PeerConnection, error) {
 	return api.NewPeerConnection(webrtc.Configuration{})
 }
 
+func deriveVoiceKey(roomKeyBytes []byte) ([]byte, error) {
+	r := hkdf.New(sha256.New, roomKeyBytes, nil, []byte("voice"))
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(r, key); err != nil {
+		return nil, fmt.Errorf("hkdf: %w", err)
+	}
+	return key, nil
+}
+
+func newAEAD(key []byte) (cipher.AEAD, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
+
+func encryptFrame(aead cipher.AEAD, plaintext []byte) ([]byte, error) {
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	return append(nonce, aead.Seal(nil, nonce, plaintext, nil)...), nil
+}
+
+func decryptFrame(aead cipher.AEAD, payload []byte) ([]byte, error) {
+	ns := aead.NonceSize()
+	if len(payload) < ns {
+		return nil, fmt.Errorf("payload too short")
+	}
+	return aead.Open(nil, payload[:ns], payload[ns:], nil)
+}
+
 // Join starts a voice call in roomID. Requires an active session with a selected room.
 // Returns once the WebRTC connection is signalled; media flows asynchronously.
 func Join(roomID string) error {
@@ -119,6 +159,19 @@ func Join(roomID string) error {
 		return fmt.Errorf("already in a voice session")
 	}
 	mu.Unlock()
+
+	rawKeyBytes, err := connection.GetRoomKeyBytes()
+	if err != nil {
+		return fmt.Errorf("voice join: room key: %w", err)
+	}
+	voiceKey, err := deriveVoiceKey(rawKeyBytes)
+	if err != nil {
+		return fmt.Errorf("voice join: derive voice key: %w", err)
+	}
+	aead, err := newAEAD(voiceKey)
+	if err != nil {
+		return fmt.Errorf("voice join: aead: %w", err)
+	}
 
 	pc, err := newPC()
 	if err != nil {
@@ -149,7 +202,7 @@ func Join(roomID string) error {
 	player := oc.NewPlayer(pr)
 	player.Play()
 
-	// Receive incoming tracks: decode Opus → PCM → speakers.
+	// Receive incoming tracks: decrypt → decode Opus → PCM → speakers.
 	pc.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		dec, err := newOpusDecoder(sampleRate, numChannels)
 		if err != nil {
@@ -162,7 +215,11 @@ func Join(roomID string) error {
 			if err != nil {
 				return
 			}
-			n, err := dec.decode(pkt.Payload, pcmBuf)
+			plain, err := decryptFrame(aead, pkt.Payload)
+			if err != nil {
+				continue
+			}
+			n, err := dec.decode(plain, pcmBuf)
 			if err != nil {
 				continue
 			}
@@ -218,7 +275,7 @@ func Join(roomID string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	sess := &voiceSession{
 		roomID: roomID, pc: pc, sendTrack: sendTrack,
-		player: player, pw: pw, cancel: cancel, answerCh: answerCh,
+		aead: aead, player: player, pw: pw, cancel: cancel, answerCh: answerCh,
 	}
 	mu.Lock()
 	activeSession = sess
@@ -240,7 +297,7 @@ func Join(roomID string) error {
 		return fmt.Errorf("voice join: timeout waiting for broker answer")
 	}
 
-	go captureAndSend(ctx, sendTrack)
+	go captureAndSend(ctx, aead, sendTrack)
 	return nil
 }
 
@@ -345,7 +402,7 @@ func handleIncoming(rpcName string, payload []byte) {
 
 // captureAndSend captures microphone audio, encodes each 20ms frame to Opus,
 // and writes it to the WebRTC send track.
-func captureAndSend(ctx context.Context, track *webrtc.TrackLocalStaticRTP) {
+func captureAndSend(ctx context.Context, aead cipher.AEAD, track *webrtc.TrackLocalStaticRTP) {
 	stream, err := media.GetUserMedia(media.MediaStreamConstraints{
 		Audio: func(c *media.MediaTrackConstraints) {},
 	})
@@ -406,6 +463,12 @@ func captureAndSend(ctx context.Context, track *webrtc.TrackLocalStaticRTP) {
 				continue
 			}
 
+			ciphertext, err := encryptFrame(aead, opusBuf[:n])
+			if err != nil {
+				log.Printf("voice: encrypt: %v", err)
+				continue
+			}
+
 			pkt := &rtppkg.Packet{
 				Header: rtppkg.Header{
 					Version:        2,
@@ -415,7 +478,7 @@ func captureAndSend(ctx context.Context, track *webrtc.TrackLocalStaticRTP) {
 					SSRC:           0xDEADBEEF,
 					Marker:         true,
 				},
-				Payload: opusBuf[:n],
+				Payload: ciphertext,
 			}
 			if err := track.WriteRTP(pkt); err != nil {
 				return
