@@ -21,8 +21,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/broker/database"
+	apitypes "github.com/srschreiber/nito/shared/api_types"
 )
 
 func (h *Handler) GetRoomMessages(w http.ResponseWriter, r *http.Request, req apitypes.GetRoomMessagesRequest) {

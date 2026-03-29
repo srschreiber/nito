@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	apitypes "github.com/srschreiber/nito/api_types"
+	apitypes "github.com/srschreiber/nito/shared/api_types"
 )
 
 func (h *Handler) ping(w http.ResponseWriter, _ *http.Request, req apitypes.PingRequest) {

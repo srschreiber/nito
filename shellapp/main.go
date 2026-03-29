@@ -26,12 +26,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	wstypes "github.com/srschreiber/nito/shared/websocket_types"
 	"github.com/srschreiber/nito/shellapp/components"
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/keys"
 	"github.com/srschreiber/nito/shellapp/styles"
 	"github.com/srschreiber/nito/shellapp/types"
-	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
 // Box overhead constants (lipgloss borders + padding).

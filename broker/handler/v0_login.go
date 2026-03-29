@@ -31,7 +31,7 @@ import (
 	"github.com/srschreiber/nito/broker/database"
 
 	"github.com/ReneKroon/ttlcache"
-	apitypes "github.com/srschreiber/nito/api_types"
+	apitypes "github.com/srschreiber/nito/shared/api_types"
 )
 
 var loginChallenges *ttlcache.Cache = nil

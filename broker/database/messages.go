@@ -24,7 +24,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	dbtypes "github.com/srschreiber/nito/broker/database/types"
-	wstypes "github.com/srschreiber/nito/websocket_types"
+	wstypes "github.com/srschreiber/nito/shared/websocket_types"
 )
 
 // GetUserSentMessageCount returns the number of messages the given user (by UUID) has sent in the given room.

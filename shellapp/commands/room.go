@@ -22,9 +22,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/srschreiber/nito/shared/utils"
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/keys"
-	"github.com/srschreiber/nito/utils"
 )
 
 func roomCreateCmd(args []Argument) (string, error) {

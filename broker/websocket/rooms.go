@@ -24,9 +24,9 @@ import (
 	"log"
 	"time"
 
-	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/broker/database"
-	wstypes "github.com/srschreiber/nito/websocket_types"
+	apitypes "github.com/srschreiber/nito/shared/api_types"
+	wstypes "github.com/srschreiber/nito/shared/websocket_types"
 )
 
 // BrokerCreateRoom creates a room owned by userID, storing the encrypted room key.

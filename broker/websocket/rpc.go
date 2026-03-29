@@ -26,7 +26,7 @@ import (
 
 	"github.com/srschreiber/nito/broker/auth"
 	"github.com/srschreiber/nito/broker/database"
-	wstypes "github.com/srschreiber/nito/websocket_types"
+	wstypes "github.com/srschreiber/nito/shared/websocket_types"
 )
 
 func (b *Broker) handleRPC(client *Client, msg wstypes.ToBrokerWsMessage) {

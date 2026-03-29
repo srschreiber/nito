@@ -28,12 +28,12 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
-	apitypes "github.com/srschreiber/nito/api_types"
 	"github.com/srschreiber/nito/broker/auth"
 	"github.com/srschreiber/nito/broker/database"
 	dbtypes "github.com/srschreiber/nito/broker/database/types"
 	"github.com/srschreiber/nito/broker/message_delivery"
-	wstypes "github.com/srschreiber/nito/websocket_types"
+	apitypes "github.com/srschreiber/nito/shared/api_types"
+	wstypes "github.com/srschreiber/nito/shared/websocket_types"
 )
 
 type Session struct {

@@ -33,7 +33,7 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 
-	"github.com/srschreiber/nito/utils"
+	"github.com/srschreiber/nito/shared/utils"
 )
 
 var NonceMap = map[string]map[string]struct{}{}

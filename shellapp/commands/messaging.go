@@ -25,10 +25,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/srschreiber/nito/shared/utils"
+	wstypes "github.com/srschreiber/nito/shared/websocket_types"
 	"github.com/srschreiber/nito/shellapp/connection"
 	"github.com/srschreiber/nito/shellapp/keys"
-	"github.com/srschreiber/nito/utils"
-	wstypes "github.com/srschreiber/nito/websocket_types"
 )
 
 func echoCmd(args []Argument) (string, error) {

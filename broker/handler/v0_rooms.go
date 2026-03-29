@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	apitypes "github.com/srschreiber/nito/api_types"
+	apitypes "github.com/srschreiber/nito/shared/api_types"
 )
 
 func (h *Handler) createRoom(w http.ResponseWriter, r *http.Request, req apitypes.CreateRoomRequest) {

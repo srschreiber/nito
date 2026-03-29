@@ -21,7 +21,7 @@ import (
 	"context"
 	"log"
 
-	wstypes "github.com/srschreiber/nito/websocket_types"
+	wstypes "github.com/srschreiber/nito/shared/websocket_types"
 )
 import db "github.com/srschreiber/nito/broker/database"
 

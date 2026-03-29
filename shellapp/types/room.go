@@ -17,7 +17,7 @@
 
 package types
 
-import apitypes "github.com/srschreiber/nito/api_types"
+import apitypes "github.com/srschreiber/nito/shared/api_types"
 
 // RoomsUpdatedMsg is broadcast whenever the room list should be refreshed.
 type RoomsUpdatedMsg struct {
