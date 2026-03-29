@@ -25,6 +25,19 @@ VOIP
 - WebRTC handles encryption for us using DTLS handshake (diffie hellman style)
 - - mixing will happen on client side, since broker cant mix encrypted streams.
 
+terms:
+- DLTS - Datagram Transport Layer Security, a protocol for encrypting datagram-based communications (like UDP)
+- SRTP - Secure Real-time Transport Protocol, a protocol for encrypting real-time audio and video streams, using keys established by DTLS
+- PCM - Pulse Code Modulation, a method used to digitally represent analog signals, commonly used for audio data (snapshots of amplitude at regular intervals)
+- RTP - Real-time Transport Protocol, a protocol for delivering audio and video over IP networks, often used in conjunction with SRTP for secure transmission
+- SDP - Session Description Protocol, a format for describing multimedia communication sessions, used in WebRTC to negotiate media parameters and establish connections
+- codec - a device or program that compresses and decompresses digital media, such as Opus for audio in WebRTC. Basically, takes PCM audio and compresses it for transmission, then decompresses it on the other end for playback.
+- Flow:
+- Connect: cli A ⇄ Broker   (DTLS + SRTP)
+- Connect: cli B ⇄ Broker   (DTLS + SRTP) 
+- PCM → Opus → encrypt with room key → send (E2EE encryption before sending to WebRTC)
+- 16LE: 2 bytes per sample, little endian
+
 # Rotation algorithm
 1. room rotation lock acquired
 2. snapshot current eligible members
@@ -59,3 +72,8 @@ broker:
 - verifies the signature against the stored public key
 - verifies password_hash = crypt($password, password_hash)
 - if all good, broker returns JWT/session
+
+
+
+- Make sure only see messages for room you're currently in, and not messages for other rooms
+- same for voice chat

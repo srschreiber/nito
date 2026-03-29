@@ -23,9 +23,9 @@ import (
 	"log"
 	"net/http"
 
+	brokercore "github.com/srschreiber/nito/broker/core"
 	"github.com/srschreiber/nito/broker/database"
 	"github.com/srschreiber/nito/broker/handler"
-	brokerws "github.com/srschreiber/nito/broker/websocket"
 )
 
 var configPath = flag.String("config", "broker/config.yml", "path to config file")
@@ -62,7 +62,7 @@ func main() {
 	defer pool.Close()
 
 	ctx := context.Background()
-	broker := brokerws.NewBroker(ctx, cfg.Broker.Addr, pool)
+	broker := brokercore.NewBroker(ctx, cfg.Broker.Addr, pool)
 	handler.New(broker, pool).Register()
 
 	log.Printf("broker listening on %s", cfg.Broker.Addr)

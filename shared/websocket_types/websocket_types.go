@@ -43,7 +43,38 @@ const (
 	RPCRoomMessage    = "room_message"
 	RPCNotification   = "notification"
 	RPCMembersUpdated = "members_updated"
+
+	// Voice signaling RPCs.
+	RPCVoiceJoin        = "voice_join"         // client → broker: join voice call, carries SDP offer
+	RPCVoiceAnswer      = "voice_answer"       // broker → client: SDP answer for initial join
+	RPCVoiceLeave       = "voice_leave"        // client → broker: leave voice call
+	RPCVoiceOffer       = "voice_offer"        // broker → client: renegotiation offer (new participant joined)
+	RPCVoiceRenegAnswer = "voice_reneg_answer" // client → broker: answer to broker renegotiation offer
 )
+
+type VoiceJoinPayload struct {
+	RoomID   string `json:"roomId"`
+	SDPOffer string `json:"sdpOffer"`
+}
+
+type VoiceAnswerPayload struct {
+	RoomID    string `json:"roomId"`
+	SDPAnswer string `json:"sdpAnswer"`
+}
+
+type VoiceLeavePayload struct {
+	RoomID string `json:"roomId"`
+}
+
+type VoiceOfferPayload struct {
+	RoomID   string `json:"roomId"`
+	SDPOffer string `json:"sdpOffer"`
+}
+
+type VoiceRenegAnswerPayload struct {
+	RoomID    string `json:"roomId"`
+	SDPAnswer string `json:"sdpAnswer"`
+}
 
 const EchoMaxChars = 1024
 

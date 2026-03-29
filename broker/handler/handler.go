@@ -23,20 +23,20 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
-	brokerws "github.com/srschreiber/nito/broker/websocket"
+	brokercore "github.com/srschreiber/nito/broker/core"
 )
 
 var validate = validator.New(validator.WithRequiredStructEnabled())
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	broker *brokerws.Broker
+	broker *brokercore.Broker
 	pool   *pgxpool.Pool
 	ctx    context.Context
 }
 
 // New creates a Handler with the given broker and pool.
-func New(broker *brokerws.Broker, pool *pgxpool.Pool) *Handler {
+func New(broker *brokercore.Broker, pool *pgxpool.Pool) *Handler {
 	return &Handler{broker: broker, pool: pool, ctx: context.Background()}
 }
 

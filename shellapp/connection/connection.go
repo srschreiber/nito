@@ -65,8 +65,32 @@ var (
 	session         *Session
 	notifChan       chan []byte // server-push notification text
 	echoChan        chan []byte // echo messages from the server (for testing connectivity)
-	roomMessageChan chan []byte // incoming room messages (raw JSON for the TUI model to dispatch
+	roomMessageChan chan []byte // incoming room messages (raw JSON for the TUI model to dispatch)
+
+	vmhMu               sync.Mutex
+	voiceMessageHandler func(rpcName string, payload []byte)
 )
+
+// SetVoiceMessageHandler registers a callback invoked for every incoming voice RPC
+// (voice_answer, voice_offer). Safe to call from any goroutine.
+func SetVoiceMessageHandler(h func(rpcName string, payload []byte)) {
+	vmhMu.Lock()
+	voiceMessageHandler = h
+	vmhMu.Unlock()
+}
+
+// GetRoomKeyBytes returns the raw decrypted bytes of the current room's AES key.
+func GetRoomKeyBytes() ([]byte, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if session == nil {
+		return nil, errors.New("not connected")
+	}
+	if session.EncryptedRoomKey == nil {
+		return nil, errors.New("no room selected")
+	}
+	return keys.DecryptRoomKey(*session.EncryptedRoomKey)
+}
 
 func normalizeURL(url string) string {
 	url = strings.TrimPrefix(url, "ws://")
@@ -218,6 +242,14 @@ func readLoop(c *websocket.Conn, echoChan, roomMessageChan, nc chan []byte) {
 		}
 
 		switch message.RPCName {
+		case wstypes.RPCVoiceAnswer, wstypes.RPCVoiceOffer:
+			vmhMu.Lock()
+			h := voiceMessageHandler
+			vmhMu.Unlock()
+			if h != nil {
+				go h(message.RPCName, message.Payload)
+			}
+			continue
 		case wstypes.RPCNotification:
 			var notificationPayload wstypes.NotificationPayload
 			if json.Unmarshal(data, &notificationPayload) != nil {
