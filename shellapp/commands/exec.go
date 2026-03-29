@@ -41,6 +41,8 @@ const (
 	CmdRoomAccept  = "room-accept"
 	CmdSay         = "say"
 	CmdJump        = "jump"
+	CmdVoiceJoin   = "voice-join"
+	CmdVoiceLeave  = "voice-leave"
 )
 
 // JumpLine holds the target line requested by the most recent jump command.
@@ -180,6 +182,12 @@ func ExecCommand(cmd string) (string, Signal, error) {
 		}
 		JumpLine = n
 		return "", SignalJump, nil
+	case CmdVoiceJoin:
+		out, err := voiceJoinCmd()
+		return out, SignalNone, err
+	case CmdVoiceLeave:
+		out, err := voiceLeaveCmd()
+		return out, SignalNone, err
 	default:
 		return "", SignalNone, errors.New("unknown command: " + parsedCommand.Name)
 	}
