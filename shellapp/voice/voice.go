@@ -151,32 +151,22 @@ func Join(roomID string) error {
 
 	// Receive incoming tracks: decode Opus → PCM → speakers.
 	pc.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		log.Printf("voice: OnTrack fired for track %s", remote.ID())
 		dec, err := newOpusDecoder(sampleRate, numChannels)
 		if err != nil {
-			log.Printf("voice: new opus decoder: %v", err)
 			return
 		}
 		defer dec.close()
 		pcmBuf := make([]int16, opusFrameSamples*numChannels)
-		first := true
 		for {
 			pkt, _, err := remote.ReadRTP()
 			if err != nil {
-				log.Printf("voice: ReadRTP error: %v", err)
 				return
-			}
-			if first {
-				log.Printf("voice: first RTP packet received, payload %d bytes", len(pkt.Payload))
-				first = false
 			}
 			n, err := dec.decode(pkt.Payload, pcmBuf)
 			if err != nil {
-				log.Printf("voice: opus decode: %v", err)
 				continue
 			}
 			if _, err := pw.Write(int16ToBytes(pcmBuf[:n*numChannels])); err != nil {
-				log.Printf("voice: pipe write error: %v", err)
 				return
 			}
 		}
@@ -379,10 +369,8 @@ func captureAndSend(ctx context.Context, track *webrtc.TrackLocalStaticRTP) {
 	defer enc.close()
 	enc.setBitrate(32000)
 	enc.setPacketLossPerc(5)
-	log.Printf("voice: captureAndSend started, encoder ready")
 
 	reader := audioTrack.(*media.AudioTrack).NewReader(false)
-	firstSend := true
 	var seq uint32
 	var ts uint32
 	var pcmAccum []int16
@@ -429,12 +417,8 @@ func captureAndSend(ctx context.Context, track *webrtc.TrackLocalStaticRTP) {
 				},
 				Payload: opusBuf[:n],
 			}
-			if firstSend {
-				log.Printf("voice: first RTP packet sent, %d opus bytes", n)
-				firstSend = false
-			}
 			if err := track.WriteRTP(pkt); err != nil {
-				log.Printf("voice: write rtp: %v", err)
+				return
 			}
 			ts += uint32(opusFrameSamples)
 		}
