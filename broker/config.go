@@ -53,17 +53,19 @@ func (d DBConfig) ConnString() string {
 }
 
 func loadConfig(path string) (Config, error) {
-	cfg := Config{
-		Broker: BrokerConfig{Addr: "localhost:7070"},
-		DB:     DBConfig{User: "postgres", Host: "localhost", Port: "5432", Name: "nito"},
-	}
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return cfg, fmt.Errorf("open config: %w", err)
+		return Config{}, fmt.Errorf("read config %s: %w", path, err)
 	}
-	defer f.Close()
-	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
-		return cfg, fmt.Errorf("parse config: %w", err)
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	if cfg.Broker.Addr == "" {
+		cfg.Broker.Addr = "localhost:7070"
+	}
+	if cfg.DB.Port == "" {
+		cfg.DB.Port = "5432"
 	}
 	return cfg, nil
 }
