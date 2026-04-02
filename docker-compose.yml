@@ -2,18 +2,22 @@ services:
   db:
     image: postgres:16
     env_file:
-        - .env
+        - docker-configs/.env
     ports:
       - "5432:5432"
     volumes:
       - nito-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nito -d nito"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
   broker:
     image: nito-broker:latest
     network_mode: host
-    volumes:
-      - ./broker/config.yml:/app/broker/config.yml:ro
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   nito-db:

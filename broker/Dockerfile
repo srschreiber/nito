@@ -26,4 +26,5 @@ FROM alpine:3
 RUN apk --no-cache add ca-certificates
 WORKDIR /app
 COPY --from=builder /broker /broker
+COPY docker-configs/broker-config.yml broker/config.yml
 ENTRYPOINT ["/broker"]

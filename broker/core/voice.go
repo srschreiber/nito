@@ -71,8 +71,16 @@ func newVoicePC() (*webrtc.PeerConnection, error) {
 	}, webrtc.RTPCodecTypeAudio); err != nil {
 		return nil, fmt.Errorf("register codec: %w", err)
 	}
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
-	pc, err := api.NewPeerConnection(webrtc.Configuration{})
+	se := webrtc.SettingEngine{}
+	if err := se.SetEphemeralUDPPortRange(10000, 10100); err != nil {
+		return nil, fmt.Errorf("set udp port range: %w", err)
+	}
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(se))
+	pc, err := api.NewPeerConnection(webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{URLs: []string{"stun:stun.l.google.com:19302"}},
+		},
+	})
 	if err != nil {
 		return nil, err
 	}

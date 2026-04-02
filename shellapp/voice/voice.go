@@ -114,7 +114,11 @@ func newPC() (*webrtc.PeerConnection, error) {
 		return nil, fmt.Errorf("register codec: %w", err)
 	}
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
-	return api.NewPeerConnection(webrtc.Configuration{})
+	return api.NewPeerConnection(webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{URLs: []string{"stun:stun.l.google.com:19302"}},
+		},
+	})
 }
 
 func deriveVoiceKey(roomKeyBytes []byte) ([]byte, error) {

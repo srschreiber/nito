@@ -1,3 +1,4 @@
-broker/config.yml
+docker-configs/
+docker-compose.override.yml
 .idea/
 shellapp/.nito/
