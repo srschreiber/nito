@@ -5,3 +5,7 @@ run-shell:
 migrate:
 	@echo "Running migrations..."
 	go run broker/main.go --migrate-only
+
+build-and-run-broker:
+	@echo "Building and running broker..."
+	scripts/build-and-run-broker.sh

@@ -1,14 +1,19 @@
 services:
   db:
     image: postgres:16
-    environment:
-      POSTGRES_DB: nito
-      POSTGRES_USER: nito
-      POSTGRES_PASSWORD: nito-dev
+    env_file:
+        - .env
     ports:
       - "5432:5432"
     volumes:
       - nito-db:/var/lib/postgresql/data
+  broker:
+    image: nito-broker:latest
+    network_mode: host
+    volumes:
+      - ./broker/config.yml:/app/broker/config.yml:ro
+    depends_on:
+      - db
 
 volumes:
   nito-db:
