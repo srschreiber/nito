@@ -78,14 +78,16 @@ var (
 )
 
 type voiceSession struct {
-	roomID    string
-	pc        *webrtc.PeerConnection
-	sendTrack *webrtc.TrackLocalStaticRTP
-	aead      cipher.AEAD
-	player    oto.Player
-	pw        *io.PipeWriter
-	cancel    context.CancelFunc
-	answerCh  chan string // receives the initial SDP answer; closed after use
+	roomID       string
+	pc           *webrtc.PeerConnection
+	sendTrack    *webrtc.TrackLocalStaticRTP
+	aead         cipher.AEAD
+	player       oto.Player
+	pw           *io.PipeWriter
+	cancel       context.CancelFunc
+	answerCh     chan string // receives the initial SDP answer; closed after use
+	iceRestartCh chan string // receives the SDP answer after an ICE restart
+	restarting   atomic.Bool
 }
 
 func getOtoCtx() (*oto.Context, error) {
@@ -156,6 +158,12 @@ func decryptFrame(aead cipher.AEAD, payload []byte) ([]byte, error) {
 
 // Join starts a voice call in roomID. Requires an active session with a selected room.
 // Returns once the WebRTC connection is signalled; media flows asynchronously.
+// 1. Client creates offer → sets it as local description
+// 2. Client sends offer to broker
+// 3. Broker sets client's offer as its remote description
+// 4. Broker creates answer → sets it as its local description
+// 5. Broker sends answer to client
+// 6. Client sets broker's answer as its remote description
 func Join(roomID string) error {
 	mu.Lock()
 	if activeSession != nil {
@@ -279,11 +287,19 @@ func Join(roomID string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	sess := &voiceSession{
 		roomID: roomID, pc: pc, sendTrack: sendTrack,
-		aead: aead, player: player, pw: pw, cancel: cancel, answerCh: answerCh,
+		aead: aead, player: player, pw: pw, cancel: cancel,
+		answerCh: answerCh, iceRestartCh: make(chan string, 1),
 	}
 	mu.Lock()
 	activeSession = sess
 	mu.Unlock()
+
+	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		if state == webrtc.PeerConnectionStateFailed {
+			log.Printf("voice: connection failed, initiating ICE restart")
+			go iceRestart(sess)
+		}
+	})
 
 	// Register handler before we wait, so the answer isn't missed.
 	connection.SetVoiceMessageHandler(handleIncoming)
@@ -358,6 +374,19 @@ func handleIncoming(rpcName string, payload []byte) {
 		default:
 		}
 
+	case wstypes.RPCVoiceICERestartAnswer:
+		if sess == nil {
+			return
+		}
+		var ans wstypes.VoiceICERestartAnswerPayload
+		if err := json.Unmarshal(payload, &ans); err != nil {
+			return
+		}
+		select {
+		case sess.iceRestartCh <- ans.SDPAnswer:
+		default:
+		}
+
 	case wstypes.RPCVoiceOffer:
 		if sess == nil {
 			return
@@ -401,6 +430,65 @@ func handleIncoming(rpcName string, payload []byte) {
 			data, _ := json.Marshal(wsMsg)
 			_ = connection.Send(data)
 		}()
+	}
+}
+
+// iceRestart initiates an ICE restart when the peer connection enters the Failed state.
+func iceRestart(sess *voiceSession) {
+	if !sess.restarting.CompareAndSwap(false, true) {
+		return
+	}
+	defer sess.restarting.Store(false)
+
+	mu.Lock()
+	active := activeSession == sess
+	mu.Unlock()
+	if !active {
+		return
+	}
+
+	offer, err := sess.pc.CreateOffer(&webrtc.OfferOptions{ICERestart: true})
+	if err != nil {
+		log.Printf("voice: ice restart create offer: %v", err)
+		return
+	}
+	gatherDone := webrtc.GatheringCompletePromise(sess.pc)
+	if err := sess.pc.SetLocalDescription(offer); err != nil {
+		log.Printf("voice: ice restart set local desc: %v", err)
+		return
+	}
+	<-gatherDone
+
+	s := connection.CurrentSession()
+	if s == nil {
+		return
+	}
+	payload, _ := json.Marshal(wstypes.VoiceICERestartPayload{
+		RoomID: sess.roomID, SDPOffer: sess.pc.LocalDescription().SDP,
+	})
+	sig, err := keys.Sign(s.UserID + ":" + wstypes.RPCVoiceICERestart)
+	if err != nil {
+		return
+	}
+	wsMsg := wstypes.ToBrokerWsMessage{
+		RPCName: wstypes.RPCVoiceICERestart, RequestID: fmt.Sprintf("%d", time.Now().UnixNano()),
+		UserID: s.UserID, Nonce: fmt.Sprintf("%d", time.Now().UnixNano()),
+		Timestamp: time.Now().Unix(), Signature: sig, Payload: payload,
+	}
+	data, _ := json.Marshal(wsMsg)
+	if err := connection.Send(data); err != nil {
+		return
+	}
+
+	select {
+	case sdpAnswer := <-sess.iceRestartCh:
+		if err := sess.pc.SetRemoteDescription(webrtc.SessionDescription{
+			Type: webrtc.SDPTypeAnswer, SDP: sdpAnswer,
+		}); err != nil {
+			log.Printf("voice: ice restart set remote desc: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		log.Printf("voice: ice restart timeout")
 	}
 }
 

@@ -253,6 +253,31 @@ func (b *Broker) voiceLeave(userID, roomID string) {
 	}
 }
 
+// voiceICERestart applies an ICE restart offer from a client and returns a fresh SDP answer.
+func (b *Broker) voiceICERestart(userID, roomID, sdpOffer string) (string, error) {
+	_, p := b.getVoiceParticipant(roomID, userID)
+	if p == nil {
+		return "", fmt.Errorf("participant %s not in room %s", userID, roomID)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := p.PC.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeOffer, SDP: sdpOffer,
+	}); err != nil {
+		return "", fmt.Errorf("set remote description: %w", err)
+	}
+	answer, err := p.PC.CreateAnswer(nil)
+	if err != nil {
+		return "", fmt.Errorf("create answer: %w", err)
+	}
+	gatherDone := webrtc.GatheringCompletePromise(p.PC)
+	if err := p.PC.SetLocalDescription(answer); err != nil {
+		return "", fmt.Errorf("set local description: %w", err)
+	}
+	<-gatherDone
+	return p.PC.LocalDescription().SDP, nil
+}
+
 // voiceRenegAnswer applies a renegotiation answer from a client.
 func (b *Broker) voiceRenegAnswer(userID, roomID, sdpAnswer string) error {
 	_, p := b.getVoiceParticipant(roomID, userID)

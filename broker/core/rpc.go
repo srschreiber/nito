@@ -43,6 +43,8 @@ func (b *Broker) handleRPC(client *Client, msg wstypes.ToBrokerWsMessage) {
 		b.handleVoiceLeave(client, msg)
 	case wstypes.RPCVoiceRenegAnswer:
 		b.handleVoiceRenegAnswer(client, msg)
+	case wstypes.RPCVoiceICERestart:
+		b.handleVoiceICERestart(client, msg)
 	default:
 		log.Printf("unknown RPC %q from %s", msg.RPCName, client.Session.UserID)
 	}
@@ -134,4 +136,26 @@ func (b *Broker) handleVoiceRenegAnswer(client *Client, msg wstypes.ToBrokerWsMe
 	if err := b.voiceRenegAnswer(client.Session.UserID, payload.RoomID, payload.SDPAnswer); err != nil {
 		log.Printf("voice_reneg_answer: %s in room %s: %v", client.Session.UserID, payload.RoomID, err)
 	}
+}
+
+func (b *Broker) handleVoiceICERestart(client *Client, msg wstypes.ToBrokerWsMessage) {
+	var payload wstypes.VoiceICERestartPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("voice_ice_restart: bad payload from %s: %v", client.Session.UserID, err)
+		return
+	}
+	sdpAnswer, err := b.voiceICERestart(client.Session.UserID, payload.RoomID, payload.SDPOffer)
+	if err != nil {
+		log.Printf("voice_ice_restart: %s in room %s: %v", client.Session.UserID, payload.RoomID, err)
+		return
+	}
+	respPayload, err := json.Marshal(wstypes.VoiceICERestartAnswerPayload{
+		RoomID:    payload.RoomID,
+		SDPAnswer: sdpAnswer,
+	})
+	if err != nil {
+		log.Printf("voice_ice_restart: marshal answer: %v", err)
+		return
+	}
+	b.sendToClient(client.Session.UserID, wstypes.RPCVoiceICERestartAnswer, respPayload)
 }

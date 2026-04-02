@@ -45,11 +45,13 @@ const (
 	RPCMembersUpdated = "members_updated"
 
 	// Voice signaling RPCs.
-	RPCVoiceJoin        = "voice_join"         // client → broker: join voice call, carries SDP offer
-	RPCVoiceAnswer      = "voice_answer"       // broker → client: SDP answer for initial join
-	RPCVoiceLeave       = "voice_leave"        // client → broker: leave voice call
-	RPCVoiceOffer       = "voice_offer"        // broker → client: renegotiation offer (new participant joined)
-	RPCVoiceRenegAnswer = "voice_reneg_answer" // client → broker: answer to broker renegotiation offer
+	RPCVoiceJoin             = "voice_join"               // client → broker: join voice call, carries SDP offer
+	RPCVoiceAnswer           = "voice_answer"             // broker → client: SDP answer for initial join
+	RPCVoiceLeave            = "voice_leave"              // client → broker: leave voice call
+	RPCVoiceOffer            = "voice_offer"              // broker → client: renegotiation offer (new participant joined)
+	RPCVoiceRenegAnswer      = "voice_reneg_answer"       // client → broker: answer to broker renegotiation offer
+	RPCVoiceICERestart       = "voice_ice_restart"        // client → broker: ICE restart offer
+	RPCVoiceICERestartAnswer = "voice_ice_restart_answer" // broker → client: ICE restart answer
 )
 
 type VoiceJoinPayload struct {
@@ -72,6 +74,16 @@ type VoiceOfferPayload struct {
 }
 
 type VoiceRenegAnswerPayload struct {
+	RoomID    string `json:"roomId"`
+	SDPAnswer string `json:"sdpAnswer"`
+}
+
+type VoiceICERestartPayload struct {
+	RoomID   string `json:"roomId"`
+	SDPOffer string `json:"sdpOffer"`
+}
+
+type VoiceICERestartAnswerPayload struct {
 	RoomID    string `json:"roomId"`
 	SDPAnswer string `json:"sdpAnswer"`
 }
